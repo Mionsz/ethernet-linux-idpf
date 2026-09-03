@@ -1407,6 +1407,12 @@ idpf_vport_dealloc(struct idpf_vport *vport)
 	struct idpf_adapter *adapter = vport->adapter;
 	unsigned int i = vport->idx;
 
+	/* A dealloc outside detach means something tore the vport down under
+	 * a live interface; the id is what every virtchnl lookup then misses. */
+	idpf_dbg(idpf_adapter_to_dev(adapter),
+	    "vport %u (idx %u) dealloc, adapter flags 0x%x\n",
+	    vport->vport_id, i, adapter->flags);
+
 	idpf_deinit_mac_addr(vport);
 
 	if ((adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) == 0)
@@ -2673,12 +2679,21 @@ idpf_if_priv_ioctl(if_ctx_t ctx, u_long command, caddr_t data)
 	struct ifdrv *ifd = (struct ifdrv *)data;
 	struct idpf_vport *vport = np->vport;
 	struct idpf_q_vec_rsrc *rsrc;
+	struct idpf_tstamp_config tscfg;
 	struct idpf_drv_info info;
 
 	if (command != SIOCGDRVSPEC)
 		return (ENOTTY);
 	if (vport == NULL)
 		return (ENXIO);
+
+	if (ifd->ifd_cmd == IDPF_DRVCMD_GET_TSTAMP_CONFIG) {
+		if (ifd->ifd_len != sizeof(tscfg))
+			return (EINVAL);
+		idpf_ptp_get_tstamp_config(vport, &tscfg);
+		return (copyout(&tscfg, ifd->ifd_data, sizeof(tscfg)));
+	}
+
 	if (ifd->ifd_cmd != IDPF_DRVCMD_GET_INFO)
 		return (EINVAL);
 	if (ifd->ifd_len != sizeof(info))

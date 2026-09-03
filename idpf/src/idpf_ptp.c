@@ -190,8 +190,12 @@ idpf_ptp_get_caps(struct idpf_adapter *adapter)
 	ptp->secondary_mbx.peer_mbx_q_id = le16toh(rsp.peer_mbx_q_id);
 	ptp->secondary_mbx.peer_id = rsp.peer_id;
 	ptp->secondary_mbx.mbx_q_index = rsp.mbx_q_index;
-	/* A non-zero queue index means a secondary mailbox was assigned. */
-	ptp->secondary_mbx.valid = (rsp.mbx_q_index != 0);
+	/*
+	 * A secondary mailbox needs both a queue index and a real peer id;
+	 * the control plane reports 0xffff when it stays on the primary.
+	 */
+	ptp->secondary_mbx.valid = (rsp.mbx_q_index != 0 &&
+	    ptp->secondary_mbx.peer_mbx_q_id != 0xffff);
 
 	ptp->dev_clk_regs.dev_clk_ns_l = le32toh(rsp.clk_offsets.dev_clk_ns_l);
 	ptp->dev_clk_regs.dev_clk_ns_h = le32toh(rsp.clk_offsets.dev_clk_ns_h);
@@ -329,12 +333,13 @@ static int
 idpf_ptp_read_dev_clk_mbx(struct idpf_adapter *adapter,
     struct idpf_ptp_dev_timers *dev_clk_time)
 {
-	struct virtchnl2_ptp_get_dev_clk_time rsp = { 0 };
+	struct virtchnl2_ptp_get_dev_clk_time rsp = { 0 }, req = { 0 };
 	struct idpf_ptp *ptp = adapter->ptp;
 	int err;
 
+	/* Distinct buffers: the reply is written while the request is read. */
 	err = idpf_ptp_send_msg(adapter, VIRTCHNL2_OP_PTP_GET_DEV_CLK_TIME,
-	    &rsp, sizeof(rsp), &rsp, sizeof(rsp), sizeof(rsp), NULL);
+	    &req, sizeof(req), &rsp, sizeof(rsp), sizeof(rsp), NULL);
 	if (err != 0)
 		return (err);
 
@@ -365,7 +370,7 @@ idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 		return (EINVAL);
 
 	ptp = adapter->ptp;
-	mtx_lock(&ptp->read_dev_clk_lock);
+	sx_xlock(&ptp->read_dev_clk_lock);
 	switch (ptp->get_dev_clk_time_access) {
 	case IDPF_PTP_DIRECT:
 		err = idpf_ptp_read_dev_clk_direct(adapter, dev_clk_time);
@@ -377,7 +382,7 @@ idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 		err = EOPNOTSUPP;
 		break;
 	}
-	mtx_unlock(&ptp->read_dev_clk_lock);
+	sx_xunlock(&ptp->read_dev_clk_lock);
 
 	return (err);
 }
@@ -445,6 +450,29 @@ idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 	num_latches = le16toh(rsp->num_latches);
 	if (num_latches == 0) {
 		err = EOPNOTSUPP;
+		goto out;
+	}
+	if (num_latches > IDPF_PTP_MAX_TX_TSTAMP_LATCHES) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "PTP: control plane declares %u TX latches, max %u\n",
+		    num_latches, IDPF_PTP_MAX_TX_TSTAMP_LATCHES);
+		err = EIO;
+		goto out;
+	}
+	if (le32toh(rsp->vport_id) != vport->vport_id) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "PTP: TX latch caps reply is for vport %u, expected %u\n",
+		    le32toh(rsp->vport_id), vport->vport_id);
+		err = EIO;
+		goto out;
+	}
+	/* The bits index a 64-bit timestamp and are used as shift counts. */
+	if (rsp->tstamp_ns_lo_bit >= rsp->tstamp_ns_hi_bit ||
+	    rsp->tstamp_ns_hi_bit > 63) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "PTP: invalid timestamp bit range %u..%u\n",
+		    rsp->tstamp_ns_lo_bit, rsp->tstamp_ns_hi_bit);
+		err = EIO;
 		goto out;
 	}
 	/* The reply must be exactly as long as the latch count it declares. */
@@ -523,6 +551,30 @@ idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport)
 }
 
 /**
+ * idpf_ptp_get_tstamp_config - report the negotiated timestamping state
+ * @vport: vport to report on
+ * @cfg: caller-supplied kernel buffer to fill
+ *
+ * capable is false when the control plane never offered PTP, which is what
+ * distinguishes "no PTP on this device" from "PTP present but disabled".
+ */
+void
+idpf_ptp_get_tstamp_config(struct idpf_vport *vport,
+    struct idpf_tstamp_config *cfg)
+{
+
+	memset(cfg, 0, sizeof(*cfg));
+
+	if (vport == NULL || vport->adapter == NULL ||
+	    vport->adapter->ptp == NULL)
+		return;
+
+	cfg->capable = 1;
+	cfg->tx_type = idpf_ptp_is_vport_tx_tstamp_ena(vport) ? 1 : 0;
+	cfg->rx_filter = idpf_ptp_is_vport_rx_tstamp_ena(vport) ? 1 : 0;
+}
+
+/**
  * idpf_ptp_access_str - name an access method for reporting
  * @access: enum idpf_ptp_access value
  */
@@ -571,12 +623,12 @@ idpf_ptp_init(struct idpf_adapter *adapter)
 	ptp->adapter = adapter;
 	/* Force the first cached-PHC consumer to refresh. */
 	ptp->cached_phc_ticks = ticks - (int)IDPF_PTP_PHC_CACHE_TICKS - 1;
-	mtx_init(&ptp->read_dev_clk_lock, "idpf_ptp_clk", NULL, MTX_DEF);
+	sx_init(&ptp->read_dev_clk_lock, "idpf_ptp_clk");
 	adapter->ptp = ptp;
 
 	err = idpf_ptp_get_caps(adapter);
 	if (err != 0) {
-		mtx_destroy(&ptp->read_dev_clk_lock);
+		sx_destroy(&ptp->read_dev_clk_lock);
 		free(ptp, M_DEVBUF);
 		adapter->ptp = NULL;
 		return (err);
@@ -658,6 +710,6 @@ idpf_ptp_release(struct idpf_adapter *adapter)
 	ptp = adapter->ptp;
 	adapter->ptp = NULL;
 
-	mtx_destroy(&ptp->read_dev_clk_lock);
+	sx_destroy(&ptp->read_dev_clk_lock);
 	free(ptp, M_DEVBUF);
 }

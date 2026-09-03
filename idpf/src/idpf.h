@@ -85,6 +85,7 @@
  * ifdi_priv_ioctl, so no new SIOC number is defined.
  */
 #define IDPF_DRVCMD_GET_INFO	0
+#define IDPF_DRVCMD_GET_TSTAMP_CONFIG	1
 
 struct idpf_drv_info {
 	uint32_t	vport_id;
@@ -96,6 +97,17 @@ struct idpf_drv_info {
 	uint8_t		link_known;
 	uint8_t		mac[ETHER_ADDR_LEN];
 	uint8_t		pad[2];
+};
+
+/*
+ * Timestamping state.  FreeBSD has no SIOCxHWTSTAMP, so this is reported
+ * through SIOCGDRVSPEC rather than the Linux ioctl pair.
+ */
+struct idpf_tstamp_config {
+	uint32_t	capable;	/* control plane offers PTP at all */
+	int32_t		tx_type;	/* 0 off, 1 on */
+	int32_t		rx_filter;	/* 0 none, 1 all */
+	uint32_t	flags;
 };
 
 #ifdef IDPF_DEBUG

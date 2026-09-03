@@ -22,6 +22,8 @@ struct idpf_vport;
 /* Register offsets arrive from the control plane, so 0 means "not provided". */
 #define IDPF_PTP_REG_INVALID	0
 
+/* Bounds a control-plane supplied latch count before it sizes an allocation. */
+#define IDPF_PTP_MAX_TX_TSTAMP_LATCHES	256
 enum idpf_ptp_access {
 	IDPF_PTP_NONE = 0,
 	IDPF_PTP_DIRECT,
@@ -96,7 +98,8 @@ struct idpf_ptp {
 	uint8_t	 get_cross_tstamp_access;
 	uint8_t	 tx_tstamp_access;
 	struct idpf_ptp_secondary_mbx secondary_mbx;
-	struct mtx read_dev_clk_lock;
+	/* sx, not mtx: the mailbox read sleeps in cv_timedwait() while held. */
+	struct sx read_dev_clk_lock;
 };
 
 int	idpf_ptp_init(struct idpf_adapter *adapter);
@@ -111,5 +114,7 @@ uint64_t idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
 
 bool	idpf_ptp_is_vport_tx_tstamp_ena(struct idpf_vport *vport);
 bool	idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport);
+void	idpf_ptp_get_tstamp_config(struct idpf_vport *vport,
+	    struct idpf_tstamp_config *cfg);
 
 #endif /* _IDPF_PTP_H_ */

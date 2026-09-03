@@ -84,10 +84,14 @@ idpf_vid_to_vport(struct idpf_adapter *adapter, uint32_t v_id)
 	uint16_t num_max_vports = idpf_get_max_vports(adapter);
 	int i;
 
-	/* vport_ids[] starts zeroed, so an empty slot matches vport id 0. */
+	/*
+	 * The vport carries its own id, so it is the source of truth; the
+	 * parallel vport_ids[] array is only a cache and has been observed
+	 * holding stale values.
+	 */
 	for (i = 0; i < num_max_vports; i++)
 		if (adapter->vports[i] != NULL &&
-		    adapter->vport_ids[i] == v_id)
+		    adapter->vports[i]->vport_id == v_id)
 			return (adapter->vports[i]);
 
 	return (NULL);

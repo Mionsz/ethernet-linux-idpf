@@ -2309,6 +2309,9 @@ idpf_vport_intr_ena(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 {
 	uint16_t q_idx;
 
+	if (rsrc->q_vectors == NULL)
+		return;
+
 	for (q_idx = 0; q_idx < rsrc->num_q_vectors; q_idx++) {
 		struct idpf_q_vector *qv = &rsrc->q_vectors[q_idx];
 
@@ -2376,9 +2379,14 @@ int
 idpf_tx_queue_intr_enable(if_ctx_t ctx, uint16_t txqid)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
-	struct idpf_queue *txq = idpf_txq(vport, txqid);
+	struct idpf_queue *txq;
 
-	if (txq->q_vector != NULL)
+	/* iflib keeps driving its init sequence after the driver refuses it. */
+	if (vport == NULL || vport->dflt_qv_rsrc.txq_grps == NULL)
+		return (ENXIO);
+
+	txq = idpf_txq(vport, txqid);
+	if (txq != NULL && txq->q_vector != NULL)
 		idpf_vport_intr_update_itr_ena_irq(txq->q_vector);
 
 	return (0);
@@ -2395,9 +2403,13 @@ int
 idpf_rx_queue_intr_enable(if_ctx_t ctx, uint16_t rxqid)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
-	struct idpf_queue *rxq = idpf_rxq(&vport->dflt_qv_rsrc, rxqid);
+	struct idpf_queue *rxq;
 
-	if (rxq->q_vector != NULL)
+	if (vport == NULL || vport->dflt_qv_rsrc.rxq_grps == NULL)
+		return (ENXIO);
+
+	rxq = idpf_rxq(&vport->dflt_qv_rsrc, rxqid);
+	if (rxq != NULL && rxq->q_vector != NULL)
 		idpf_vport_intr_update_itr_ena_irq(rxq->q_vector);
 
 	return (0);
@@ -2412,6 +2424,9 @@ idpf_intr_enable(if_ctx_t ctx)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
 
+	if (vport == NULL)
+		return;
+
 	idpf_vport_intr_ena(vport, &vport->dflt_qv_rsrc);
 }
 
@@ -2423,6 +2438,9 @@ void
 idpf_intr_disable(if_ctx_t ctx)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
+
+	if (vport == NULL)
+		return;
 
 	idpf_vport_intr_dis_irq_all(&vport->dflt_qv_rsrc);
 }
