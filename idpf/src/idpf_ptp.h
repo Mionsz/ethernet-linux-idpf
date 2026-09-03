@@ -101,6 +101,7 @@ struct idpf_ptp {
 
 int	idpf_ptp_init(struct idpf_adapter *adapter);
 void	idpf_ptp_release(struct idpf_adapter *adapter);
+void	idpf_ptp_sysctl_init(struct idpf_adapter *adapter);
 int	idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 	    struct idpf_ptp_dev_timers *dev_clk_time);
 int	idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport);

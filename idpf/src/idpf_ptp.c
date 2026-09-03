@@ -21,6 +21,7 @@
 #include <sys/mutex.h>
 #include <sys/endian.h>
 #include <sys/limits.h>
+#include <sys/sysctl.h>
 
 #include "idpf.h"
 #include "idpf_ptp.h"
@@ -522,6 +523,23 @@ idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport)
 }
 
 /**
+ * idpf_ptp_access_str - name an access method for reporting
+ * @access: enum idpf_ptp_access value
+ */
+static const char *
+idpf_ptp_access_str(uint8_t access)
+{
+	switch (access) {
+	case IDPF_PTP_DIRECT:
+		return ("direct");
+	case IDPF_PTP_MAILBOX:
+		return ("mailbox");
+	default:
+		return ("unavailable");
+	}
+}
+
+/**
  * idpf_ptp_init - allocate PTP state and negotiate capabilities
  * @adapter: driver private data
  *
@@ -539,8 +557,12 @@ idpf_ptp_init(struct idpf_adapter *adapter)
 	if (adapter->ptp != NULL)
 		return (0);
 
-	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_PTP))
+	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_PTP)) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "PTP: not offered by the control plane (other_caps 0x%jx)\n",
+		    (uintmax_t)le64toh(adapter->caps.other_caps));
 		return (EOPNOTSUPP);
+	}
 
 	ptp = malloc(sizeof(*ptp), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (ptp == NULL)
@@ -566,7 +588,59 @@ idpf_ptp_init(struct idpf_adapter *adapter)
 
 	idpf_ptp_get_features_access(adapter);
 
+	device_printf(idpf_adapter_to_dev(adapter),
+	    "PTP: caps 0x%x, device clock %s, TX timestamp %s\n", ptp->caps,
+	    idpf_ptp_access_str(ptp->get_dev_clk_time_access),
+	    idpf_ptp_access_str(ptp->tx_tstamp_access));
+
 	return (0);
+}
+
+/**
+ * idpf_ptp_sysctl_clock - read the device clock through sysctl
+ *
+ * FreeBSD has no SO_TIMESTAMPING and iflib's if_rxd_info carries no timestamp
+ * field, so sysctl is the only way to hand the PHC to userspace.
+ */
+static int
+idpf_ptp_sysctl_clock(SYSCTL_HANDLER_ARGS)
+{
+	struct idpf_adapter *adapter = arg1;
+	struct idpf_ptp_dev_timers timers;
+	uint64_t ns;
+	int err;
+
+	err = idpf_ptp_get_dev_clk_time(adapter, &timers);
+	if (err != 0)
+		return (err);
+
+	ns = timers.dev_clk_time_ns;
+
+	return (sysctl_handle_64(oidp, &ns, 0, req));
+}
+
+/**
+ * idpf_ptp_sysctl_init - publish the PTP clock node
+ * @adapter: driver private data
+ *
+ * Does nothing when PTP was not negotiated.
+ */
+void
+idpf_ptp_sysctl_init(struct idpf_adapter *adapter)
+{
+	device_t dev;
+
+	if (adapter == NULL || adapter->ptp == NULL)
+		return;
+	if (adapter->ptp->get_dev_clk_time_access == IDPF_PTP_NONE)
+		return;
+
+	dev = idpf_adapter_to_dev(adapter);
+	SYSCTL_ADD_PROC(device_get_sysctl_ctx(dev),
+	    SYSCTL_CHILDREN(device_get_sysctl_tree(dev)), OID_AUTO,
+	    "ptp_clock_ns", CTLTYPE_U64 | CTLFLAG_RD | CTLFLAG_MPSAFE,
+	    adapter, 0, idpf_ptp_sysctl_clock, "QU",
+	    "PTP device clock in nanoseconds");
 }
 
 /**

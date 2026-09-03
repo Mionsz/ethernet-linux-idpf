@@ -76,6 +76,16 @@
 #include "idpf_devids.h"
 
 /*
+ * Attach-path tracing.  Build with -DIDPF_DEBUG to enable; these are progress
+ * markers, not error reports, so they stay silent in a normal build.
+ */
+#ifdef IDPF_DEBUG
+#define idpf_dbg(dev, ...)	device_printf((dev), __VA_ARGS__)
+#else
+#define idpf_dbg(dev, ...)	do { } while (0)
+#endif
+
+/*
  * idpf_adi.h is retained: ADI lifecycle events are CONDITIONAL but the
  * header is shared protocol material.  [LOCAL:A18]
  */

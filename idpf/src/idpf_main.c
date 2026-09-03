@@ -62,6 +62,7 @@
 #include "idpf.h"
 #include "idpf_lan_vf_regs.h"
 #include "idpf_virtchnl.h"
+#include "idpf_ptp.h"
 
 #define DRV_SUMMARY	"Intel(R) Infrastructure Data Path Function Driver"
 
@@ -743,6 +744,8 @@ idpf_if_attach_post(if_ctx_t ctx)
 
 	device_printf(adapter->dev, "%s, version %s\n", DRV_SUMMARY,
 	    IDPF_DRV_VER);
+
+	idpf_ptp_sysctl_init(adapter);
 
 	return (0);
 }

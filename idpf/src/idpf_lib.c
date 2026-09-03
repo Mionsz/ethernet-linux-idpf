@@ -976,7 +976,7 @@ idpf_init_mac_addr(struct idpf_vport *vport, struct idpf_netdev_priv *np)
 	struct idpf_adapter *adapter = vport->adapter;
 	int err;
 
-	device_printf(idpf_adapter_to_dev(adapter),
+	idpf_dbg(idpf_adapter_to_dev(adapter),
 	    "mac: %02x:%02x:%02x:%02x:%02x:%02x valid=%d cfg=%p\n",
 	    vport->default_mac_addr[0], vport->default_mac_addr[1],
 	    vport->default_mac_addr[2], vport->default_mac_addr[3],
@@ -989,7 +989,7 @@ idpf_init_mac_addr(struct idpf_vport *vport, struct idpf_netdev_priv *np)
 		return (idpf_add_mac_filter(vport, np,
 		    vport->default_mac_addr, false));
 
-	device_printf(idpf_adapter_to_dev(adapter), "mac: generating\n");
+	idpf_dbg(idpf_adapter_to_dev(adapter), "mac: generating\n");
 
 	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 	    VIRTCHNL2_CAP_MACFILTER)) {
@@ -1782,7 +1782,7 @@ idpf_init_task(void *arg, int pending __unused)
 	bool default_vport;
 	int index, err;
 
-	device_printf(dev, "init_task: entered (alloc %u)\n",
+	idpf_dbg(dev, "init_task: entered (alloc %u)\n",
 	    adapter->num_alloc_vports);
 
 	num_default_vports = idpf_get_default_vports(adapter);
@@ -1792,7 +1792,7 @@ idpf_init_task(void *arg, int pending __unused)
 	if (err != 0)
 		goto unwind_vports;
 
-	device_printf(dev, "init_task: creating vport\n");
+	idpf_dbg(dev, "init_task: creating vport\n");
 	err = idpf_send_create_vport_msg(adapter, &max_q);
 	if (err != 0) {
 		idpf_vport_dealloc_max_qs(adapter, &max_q);
@@ -1813,7 +1813,7 @@ idpf_init_task(void *arg, int pending __unused)
 		goto unwind_vports;
 	}
 
-	device_printf(dev, "init_task: vport %u created, configuring\n",
+	idpf_dbg(dev, "init_task: vport %u created, configuring\n",
 	    vport->vport_id);
 	err = idpf_vport_cfg_ifp(vport);
 	if (err != 0)
@@ -2242,21 +2242,21 @@ idpf_vport_cfg_ifp(struct idpf_vport *vport)
 		return (ENXIO);
 	}
 
-	device_printf(idpf_adapter_to_dev(adapter), "cfg_ifp: softc\n");
+	idpf_dbg(idpf_adapter_to_dev(adapter), "cfg_ifp: softc\n");
 	np = iflib_get_softc(vport->ctx);
 	np->vport = vport;
 	np->vport_idx = vport->idx;
 	np->vport_id = vport->vport_id;
 	np->tx_max_bufs = idpf_get_max_tx_bufs(adapter);
 
-	device_printf(idpf_adapter_to_dev(adapter), "cfg_ifp: mac\n");
+	idpf_dbg(idpf_adapter_to_dev(adapter), "cfg_ifp: mac\n");
 	err = idpf_init_mac_addr(vport, np);
 	if (err != 0) {
 		device_printf(idpf_adapter_to_dev(adapter),
 		    "cfg_ifp: mac failed %d\n", err);
 		return (err);
 	}
-	device_printf(idpf_adapter_to_dev(adapter), "cfg_ifp: caps\n");
+	idpf_dbg(idpf_adapter_to_dev(adapter), "cfg_ifp: caps\n");
 
 	/*
 	 * RSS has no IFCAP bit on FreeBSD: it is not user-toggleable, so the
@@ -2283,7 +2283,7 @@ idpf_vport_cfg_ifp(struct idpf_vport *vport)
 	 * the capabilities are published from ifdi_attach_post() instead; the
 	 * same values are recomputed there.
 	 */
-	device_printf(idpf_adapter_to_dev(adapter),
+	idpf_dbg(idpf_adapter_to_dev(adapter),
 	    "cfg_ifp: ifp=%p caps=0x%x\n", (void *)ifp, caps);
 	if (ifp == NULL)
 		return (0);
