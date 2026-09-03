@@ -140,7 +140,7 @@ else
 	fail "TX counters did not advance"
 fi
 
-ERRS=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$9}')
+ERRS=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 if [ "${ERRS:-0}" -eq 0 ] 2>/dev/null; then
 	pass "no RX/TX errors"
 else

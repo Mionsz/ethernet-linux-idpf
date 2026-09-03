@@ -1407,12 +1407,16 @@ idpf_vport_dealloc(struct idpf_vport *vport)
 	struct idpf_adapter *adapter = vport->adapter;
 	unsigned int i = vport->idx;
 
-	adapter->vports[i] = NULL;
-
 	idpf_deinit_mac_addr(vport);
 
 	if ((adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) == 0)
 		idpf_vport_stop(vport);
+
+	/*
+	 * Unregistered only after the teardown above, which sends virtchnl
+	 * messages that resolve the vport by id.
+	 */
+	adapter->vports[i] = NULL;
 
 	if ((adapter->flags & (1u << IDPF_REMOVE_IN_PROG)) != 0)
 		idpf_del_user_cfg_data(vport);

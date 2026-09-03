@@ -2486,8 +2486,12 @@ idpf_init_rss(struct idpf_vport *vport, struct idpf_rss_data *rss_data,
 	uint32_t lut_size;
 	int err;
 
-	if (rss_data->rss_lut_size == 0 || rsrc->num_rxq == 0)
+	if (rss_data->rss_lut_size == 0 || rsrc->num_rxq == 0) {
+		device_printf(idpf_adapter_to_dev(vport->adapter),
+		    "RSS unusable: lut_size %u, num_rxq %u\n",
+		    rss_data->rss_lut_size, rsrc->num_rxq);
 		return (EINVAL);
+	}
 
 	lut_size = rss_data->rss_lut_size * sizeof(*rss_data->rss_lut);
 

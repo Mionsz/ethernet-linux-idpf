@@ -84,8 +84,10 @@ idpf_vid_to_vport(struct idpf_adapter *adapter, uint32_t v_id)
 	uint16_t num_max_vports = idpf_get_max_vports(adapter);
 	int i;
 
+	/* vport_ids[] starts zeroed, so an empty slot matches vport id 0. */
 	for (i = 0; i < num_max_vports; i++)
-		if (adapter->vport_ids[i] == v_id)
+		if (adapter->vports[i] != NULL &&
+		    adapter->vport_ids[i] == v_id)
 			return (adapter->vports[i]);
 
 	return (NULL);
@@ -805,6 +807,14 @@ idpf_wait_for_marker_event(struct idpf_vport *vport)
 {
 	bool marked = false;
 	int i, t0, timo;
+
+	/*
+	 * Marker completions are reported through the completion queue, which
+	 * only exists in the split queue model; waiting for one in single queue
+	 * mode just burns the timeout on every stop.
+	 */
+	if (!idpf_is_queue_model_split(vport->dflt_qv_rsrc.txq_model))
+		return (0);
 
 	for (i = 0; i < vport->num_txq; i++)
 		idpf_queue_set(SW_MARKER, vport->txqs[i]);
