@@ -129,13 +129,16 @@ idpf_ctlq_shutdown(struct idpf_hw *hw, struct idpf_ctlq_info *cq)
 
 	mtx_assert(&cq->cq_lock, MA_NOTOWNED);
 
-	if (IS_SIMICS_DEVICE(hw->subsystem_device_id)) {
-		wr32(hw, cq->reg.head, 0);
-		wr32(hw, cq->reg.tail, 0);
-		wr32(hw, cq->reg.len, 0);
-		wr32(hw, cq->reg.bal, 0);
-		wr32(hw, cq->reg.bah, 0);
-	}
+	/*
+	 * Stop the device before the ring is freed.  Leaving bal/bah and the
+	 * length enable bit programmed points hardware at memory that
+	 * idpf_ctlq_dealloc_ring_res() is about to release.
+	 */
+	wr32(hw, cq->reg.head, 0);
+	wr32(hw, cq->reg.tail, 0);
+	wr32(hw, cq->reg.len, 0);
+	wr32(hw, cq->reg.bal, 0);
+	wr32(hw, cq->reg.bah, 0);
 
 	idpf_ctlq_dealloc_ring_res(hw, cq);
 

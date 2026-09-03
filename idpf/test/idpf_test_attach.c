@@ -173,6 +173,7 @@ test_ctlq_reg_init_offsets_are_in_window(void)
 	struct idpf_ctlq_create_info info[2];
 	struct idpf_test_env env;
 	struct idpf_adapter *adapter;
+	bus_size_t mbx_base;
 
 	if (idpf_test_env_setup(&env) != 0) {
 		IDPF_EXPECT(false, "env setup failed");
@@ -187,16 +188,27 @@ test_ctlq_reg_init_offsets_are_in_window(void)
 	/*
 	 * Every offset the mailbox will touch must land inside the window the
 	 * device ops published, or attach would write outside BAR0.
+	 *
+	 * ctlq_reg_init() stores offsets relative to the window start, which
+	 * is what idpf_get_mbx_reg_addr() expects, so add the base back before
+	 * testing them against the absolute region.
 	 */
-	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx, info[0].reg.head),
+	mbx_base = adapter->hw.mbx.addr_start;
+
+	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx,
+	    mbx_base + info[0].reg.head),
 	    "ASQ head 0x%x outside mbx window", info[0].reg.head);
-	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx, info[0].reg.tail),
+	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx,
+	    mbx_base + info[0].reg.tail),
 	    "ASQ tail 0x%x outside mbx window", info[0].reg.tail);
-	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx, info[0].reg.len),
+	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx,
+	    mbx_base + info[0].reg.len),
 	    "ASQ len 0x%x outside mbx window", info[0].reg.len);
-	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx, info[1].reg.head),
+	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx,
+	    mbx_base + info[1].reg.head),
 	    "ARQ head 0x%x outside mbx window", info[1].reg.head);
-	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx, info[1].reg.tail),
+	IDPF_EXPECT(idpf_reg_offset_in_region(&adapter->hw.mbx,
+	    mbx_base + info[1].reg.tail),
 	    "ARQ tail 0x%x outside mbx window", info[1].reg.tail);
 
 	IDPF_EXPECT(info[0].reg.len_ena_mask != 0, "ASQ len enable mask unset");
