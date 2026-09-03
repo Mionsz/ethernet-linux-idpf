@@ -34,18 +34,12 @@ CFLAGS	+= -DENABLE_SIOV_SUPPORT
 .endif
 
 #
-# Sources deliberately not built.  Each depends on a Linux subsystem with no
-# FreeBSD counterpart, and every call site in the ported driver is gone:
-#
-#	idpf_ethtool.c		ethtool; iflib exposes its knobs via sysctl
-#	idpf_idc.c		auxiliary bus / IIDC (RDMA)
-#	idpf_xsk.c		AF_XDP
-#	idpf_devlink.c		devlink
-#	idpf_vdcm_main.c	VFIO/mdev
-#	idpf_vdcm_dev.c		VFIO/mdev
-#	idpf_ptp.c		PTP; idpf_ptp.h supplies no-op stubs instead
-#	idpf_virtchnl_ptp.c	PTP
-#	kcompat*.c		Linux kernel version compatibility
+# The Linux-only sources have been removed from the tree rather than left
+# unbuilt: ethtool, IIDC/auxiliary bus (RDMA), AF_XDP, devlink, VFIO/mdev, the
+# PTP implementation and the kcompat layer all depend on subsystems with no
+# FreeBSD counterpart, and no call site in the ported driver remains.  They are
+# recoverable from git history if a port is attempted later; idpf_ptp.h stays
+# and supplies no-op stubs.
 #
 
 CWARNFLAGS	+= -Wno-unused-parameter
