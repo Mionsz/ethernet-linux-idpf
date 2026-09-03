@@ -1366,6 +1366,10 @@ idpf_vport_rel(struct idpf_vport *vport)
 
 	idpf_vport_dealloc_vec_indexes(vport, rsrc);
 
+	/* Vectors are allocated in attach_pre, so release them even if the
+	 * interface was never brought up and vport_stop() never ran. */
+	idpf_vport_intr_rel(rsrc);
+
 	idpf_vport_deinit_queue_reg_chunks(vport_config);
 
 	free(adapter->vport_params_recvd[idx], M_DEVBUF);

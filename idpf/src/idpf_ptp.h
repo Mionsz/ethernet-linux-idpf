@@ -1,447 +1,114 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (C) 2019-2026 Intel Corporation */
+/* SPDX-License-Identifier: BSD-3-Clause */
+/* Copyright (C) 2023 Intel Corporation */
 
 #ifndef _IDPF_PTP_H_
 #define _IDPF_PTP_H_
 
-/*
- * FreeBSD port notes: the Linux PTP clock subsystem (ptp_clock_kernel.h) has
- * no in-kernel counterpart, so the registration members and the
- * container_of() helper that reached the adapter through them are gone.  The
- * rest of the state is retyped: struct mtx becomes struct mtx, the latch
- * lists become TAILQs, the kthread worker becomes a taskqueue with a
- * timeout_task, and sk_buff becomes mbuf.
- *
- * idpf_ptp.c is not built by this port, so IDPF_PTP_ENABLED is left
- * undefined and the no-op stubs at the end of this header are what the
- * driver links against.  [FBSD15:A30] [LOCAL:A22]
- */
-
-#include <sys/param.h>
+#include <sys/types.h>
 #include <sys/queue.h>
 #include <sys/lock.h>
 #include <sys/mutex.h>
-#include <sys/taskqueue.h>
-#include <sys/_task.h>
 
-struct mbuf;
-struct ifreq;
-struct idpf_ptp_tx_tstamp;
+struct idpf_adapter;
+struct idpf_vport;
 
-TAILQ_HEAD(idpf_ptp_tstamp_head, idpf_ptp_tx_tstamp);
-
-#define IDPF_PTP_VALID_BIT (1U << 0)
-
-/**
- * struct idpf_ptp_cmd - PTP command masks
- * @exec_cmd_mask: mask to trigger command execution
- * @shtime_enable_mask: mask to enable shadow time
+/*
+ * Only the capability-negotiation half of PTP is implemented.  The TX
+ * timestamp latch harvest is absent because struct idpf_tx_offload_params has
+ * no timestamp request field and union idpf_flex_tx_ctx_desc exposes only
+ * tsyn_reg_l/tsyn_reg_h, so a TX request cannot yet be expressed.
  */
-struct idpf_ptp_cmd {
-	uint32_t exec_cmd_mask;
-	uint32_t shtime_enable_mask;
-};
 
-/* struct idpf_ptp_dev_clk_regs - PTP device registers
- * @dev_clk_ns_l: low part of the device clock register
- * @dev_clk_ns_h: high part of the device clock register
- * @phy_clk_ns_l: low part of the PHY clock register
- * @phy_clk_ns_h: high part of the PHY clock register
- * @sys_time_ns_l: low part of the system time register
- * @sys_time_ns_h: high part of the system time register
- * @incval_l: low part of the increment value register
- * @incval_h: high part of the increment value register
- * @shadj_l: low part of the shadow adjust register
- * @shadj_h: high part of the shadow adjust register
- * @phy_incval_l: low part of the PHY increment value register
- * @phy_incval_h: high part of the PHY increment value register
- * @phy_shadj_l: low part of the PHY shadow adjust register
- * @phy_shadj_h: high part of the PHY shadow adjust register
- * @cmd: PTP command register
- * @phy_cmd: PHY command register
- * @cmd_sync: PTP command synchronization register
- */
-struct idpf_ptp_dev_clk_regs {
-	/* Main clock */
-	void *dev_clk_ns_l;
-	void *dev_clk_ns_h;
+/* Register offsets arrive from the control plane, so 0 means "not provided". */
+#define IDPF_PTP_REG_INVALID	0
 
-	/* PHY timer */
-	void *phy_clk_ns_l;
-	void *phy_clk_ns_h;
-
-	/* System time */
-	void *sys_time_ns_l;
-	void *sys_time_ns_h;
-
-	/* Main timer adjustments */
-	void *incval_l;
-	void *incval_h;
-	void *shadj_l;
-	void *shadj_h;
-
-	/* PHY timer adjustments */
-	void *phy_incval_l;
-	void *phy_incval_h;
-	void *phy_shadj_l;
-	void *phy_shadj_h;
-
-	/* Command */
-	void *cmd;
-	void *phy_cmd;
-	void *cmd_sync;
-};
-
-/**
- * enum idpf_ptp_access - the type of access to PTP operations
- * @IDPF_PTP_NONE: no access
- * @IDPF_PTP_DIRECT: direct access through BAR registers
- * @IDPF_PTP_MAILBOX: access through mailbox messages
- */
 enum idpf_ptp_access {
 	IDPF_PTP_NONE = 0,
 	IDPF_PTP_DIRECT,
 	IDPF_PTP_MAILBOX,
 };
 
-/**
- * struct idpf_ptp_secondary_mbx - PTP secondary mailbox
- * @peer_mbx_q_id: PTP mailbox queue ID
- * @peer_id: Peer ID for PTP Device Control daemon
- * @valid: indicates whether secondary mailblox is supported by the Control
- *	   Plane
- */
+struct idpf_ptp_cmd {
+	uint32_t exec_cmd_mask;
+	uint32_t shtime_enable_mask;
+};
+
+struct idpf_ptp_dev_clk_regs {
+	uint32_t dev_clk_ns_l;
+	uint32_t dev_clk_ns_h;
+	uint32_t phy_clk_ns_l;
+	uint32_t phy_clk_ns_h;
+	uint32_t sys_time_ns_l;
+	uint32_t sys_time_ns_h;
+	uint32_t incval_l;
+	uint32_t incval_h;
+	uint32_t shadj_l;
+	uint32_t shadj_h;
+	uint32_t phy_incval_l;
+	uint32_t phy_incval_h;
+	uint32_t phy_shadj_l;
+	uint32_t phy_shadj_h;
+	uint32_t cmd;
+	uint32_t phy_cmd;
+	uint32_t cmd_sync;
+};
+
 struct idpf_ptp_secondary_mbx {
 	uint16_t peer_mbx_q_id;
-	uint16_t peer_id;
-	bool valid:1;
+	uint8_t	 peer_id;
+	uint8_t	 mbx_q_index;
+	bool	 valid;
 };
 
-/**
- * enum idpf_ptp_tx_tstamp_state - Tx timestamp states
- * @IDPF_PTP_FREE: Tx timestamp index free to use
- * @IDPF_PTP_REQUEST: Tx timestamp index set to the Tx descriptor
- * @IDPF_PTP_READ_VALUE: Tx timestamp value ready to be read
- */
-enum idpf_ptp_tx_tstamp_state {
-	IDPF_PTP_FREE,
-	IDPF_PTP_REQUEST,
-	IDPF_PTP_READ_VALUE,
-};
-
-/**
- * struct idpf_ptp_tx_tstamp_status - Parameters to track Tx timestamp
- * @m: the pointer to the mbuf that received the completion tag
- * @state: the state of the Tx timestamp
- */
-struct idpf_ptp_tx_tstamp_status {
-	struct mbuf *m;
-	enum idpf_ptp_tx_tstamp_state state;
-};
-
-/**
- * struct idpf_ptp_tx_tstamp - Parametrs for Tx timestamping
- * @list_member: the list member strutcure
- * @tx_latch_reg_offset_l: Tx tstamp latch low register offset
- * @tx_latch_reg_offset_h: Tx tstamp latch high register offset
- * @m: the pointer to the mbuf for this timestamp request
- * @tstamp: the Tx tstamp value
- * @idx: the index of the Tx tstamp
- */
 struct idpf_ptp_tx_tstamp {
-	TAILQ_ENTRY(idpf_ptp_tx_tstamp) list_member;
 	uint32_t tx_latch_reg_offset_l;
 	uint32_t tx_latch_reg_offset_h;
-	struct mbuf *m;
-	uint64_t tstamp;
-	uint32_t idx;
+	uint8_t	 idx;
 };
 
-/**
- * struct idpf_ptp_vport_tx_tstamp_caps - Tx timestamp capabilities
- * @vport_id: the vport id
- * @num_entries: the number of negotiated Tx timestamp entries
- * @tstamp_ns_lo_bit: first bit for nanosecond part of the timestamp
- * @latches_lock: the lock to the lists of free/used timestamp indexes
- * @status_lock: the lock to the status tracker
- * @access: indicates an access to Tx timestamp
- * @latches_free: the list of the free Tx timestamps latches
- * @latches_in_use: the list of the used Tx timestamps latches
- * @tx_tstamp_status: Tx tstamp status tracker
- */
 struct idpf_ptp_vport_tx_tstamp_caps {
 	uint32_t vport_id;
 	uint16_t num_entries;
-	uint16_t tstamp_ns_lo_bit;
-	struct mtx latches_lock; /* lock to free list */
-	struct mtx status_lock; /* lock to status tracker */
-	bool access:1;
-	struct idpf_ptp_tstamp_head latches_free;
-	struct idpf_ptp_tstamp_head latches_in_use;
-	struct idpf_ptp_tx_tstamp_status tx_tstamp_status[];
+	uint8_t	 tstamp_ns_lo_bit;
+	uint8_t	 tstamp_ns_hi_bit;
+	uint32_t readiness_offset_l;
+	uint32_t readiness_offset_h;
+	uint8_t	 access;
+	struct idpf_ptp_tx_tstamp *latches;
 };
 
-/**
- * struct idpf_ptp - PTP parameters
- * @adapter: back pointer to the adapter
- * @base_incval: base increment value of the PTP clock
- * @max_adj: maximum adjustment of the PTP clock
- * @cmd: HW specific command masks
- * @cached_phc_time: a cached copy of the PHC time for timestamp extension
- * @cached_phc_ticks: ticks when cached_phc_time was last updated
- * @dev_clk_regs: the set of registers to access the device clock
- * @caps: PTP capabilities negotiated with the Control Plane
- * @get_dev_clk_time_access: access type for getting the device clock time
- * @get_cross_tstamp_access: access type for the cross timestamping
- * @set_dev_clk_time_access: access type for setting the device clock time
- * @adj_dev_clk_time_access: access type for the adjusting the device clock
- * @tx_tstamp_access: access type for the Tx timestamp value read
- * @rsv: reserved bits
- * @secondary_mbx: parameters for using dedicated PTP mailbox
- * @read_dev_clk_lock: spinlock protecting access to the device clock read
- *		       operation executed by the HW latch
- * @work: delayed work function for periodic tasks
- * @kworker: kwork thread for handling periodic work
- */
-struct idpf_ptp {
-	struct idpf_adapter *adapter;
-	uint64_t base_incval;
-	uint64_t max_adj;
-	struct idpf_ptp_cmd cmd;
-	uint64_t cached_phc_time;
-	int cached_phc_ticks;
-	struct idpf_ptp_dev_clk_regs dev_clk_regs;
-	uint32_t caps;
-	enum idpf_ptp_access get_dev_clk_time_access:2;
-	enum idpf_ptp_access get_cross_tstamp_access:2;
-	enum idpf_ptp_access set_dev_clk_time_access:2;
-	enum idpf_ptp_access adj_dev_clk_time_access:2;
-	enum idpf_ptp_access tx_tstamp_access:2;
-	uint8_t rsv:6;
-	struct idpf_ptp_secondary_mbx secondary_mbx;
-	struct mtx read_dev_clk_lock;
-	struct timeout_task work;
-	struct taskqueue *kworker;
-};
-
-/**
- * struct idpf_ptp_dev_timers - System time and device time values
- * @sys_time_ns: system time value expressed in nanoseconds
- * @dev_clk_time_ns: device clock time value expressed in nanoseconds
- */
 struct idpf_ptp_dev_timers {
 	uint64_t sys_time_ns;
 	uint64_t dev_clk_time_ns;
 };
 
-/**
- *idpf_ptp_is_vport_tx_tstamp_ena - Verify the Tx timestamping enablement for
- *				    a given vport.
- * @vport: Virtual port structure
- *
- * Tx timestamp capabilities are negotiated with the Control Plane only if the
- * device clock value can be read, Tx timestamp access type is different than
- * NONE, and the PTP clock for the adapter is created. When all those conditions
- * are satisfied, Tx timestamp feature is enabled and tx_tstamp_caps is
- * allocated and fulfilled.
- *
- * Return: true if the Tx timestamping is enabled, false otherwise.
- */
-static inline bool idpf_ptp_is_vport_tx_tstamp_ena(struct idpf_vport *vport)
-{
-	if (!vport->tx_tstamp_caps)
-		return false;
-	else
-		return true;
-}
+struct idpf_ptp {
+	struct idpf_adapter *adapter;
+	uint64_t base_incval;
+	uint32_t max_adj;
+	struct idpf_ptp_cmd cmd;
+	uint64_t cached_phc_time;
+	int	 cached_phc_ticks;
+	struct idpf_ptp_dev_clk_regs dev_clk_regs;
+	uint32_t caps;
+	/* enum idpf_ptp_access; plain uint8_t avoids enum-bitfield warnings. */
+	uint8_t	 get_dev_clk_time_access;
+	uint8_t	 get_cross_tstamp_access;
+	uint8_t	 tx_tstamp_access;
+	struct idpf_ptp_secondary_mbx secondary_mbx;
+	struct mtx read_dev_clk_lock;
+};
 
-/**
- * idpf_ptp_is_vport_rx_tstamp_ena - Verify the Rx timestamping enablement for
- *				     a given vport.
- * @vport: Virtual port structure
- *
- * Rx timestamp feature is enabled if the PTP clock for the adapter is created
- * and it is possible to read the value of the device clock. The second
- * assumption comes from the need to extend the Rx timestamp value to 64 bit
- * based on the current device clock time.
- *
- * Return: true if the Rx timestamping is enabled, false otherwise.
- */
-static inline bool idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport)
-{
-	if (!vport->adapter->ptp ||
-	    vport->adapter->ptp->get_dev_clk_time_access == IDPF_PTP_NONE)
-		return false;
-	else
-		return true;
-}
+int	idpf_ptp_init(struct idpf_adapter *adapter);
+void	idpf_ptp_release(struct idpf_adapter *adapter);
+int	idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
+	    struct idpf_ptp_dev_timers *dev_clk_time);
+int	idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport);
+void	idpf_ptp_release_vport_tstamps_caps(struct idpf_vport *vport);
+uint64_t idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
+	    uint32_t in_timestamp);
 
-#if defined(IDPF_PTP_ENABLED)
-int idpf_ptp_init(struct idpf_adapter *adapter);
-void idpf_ptp_release(struct idpf_adapter *adapter);
-int idpf_ptp_get_caps(struct idpf_adapter *adapter);
-void idpf_ptp_get_features_access(const struct idpf_adapter *adapter);
-bool idpf_ptp_get_txq_tstamp_capability(struct idpf_queue *txq);
-int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
-			      struct idpf_ptp_dev_timers *dev_clk_time);
-int idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
-			    struct idpf_ptp_dev_timers *cross_time);
-int idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter, uint64_t time);
-int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, uint64_t incval);
-int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter, int64_t delta);
-int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport);
-int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport);
-int idpf_ptp_get_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr);
-int idpf_ptp_set_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr);
-int idpf_ptp_request_ts(struct idpf_queue *tx_q, struct mbuf *m,
-			uint32_t *idx);
-uint64_t idpf_ptp_extend_tstamp(struct idpf_vport *vport, uint64_t in_tstamp);
-void idpf_ptp_tstamp_task(void *arg, int pending);
-int idpf_tx_tstamp(struct idpf_queue *tx_q, struct mbuf *m,
-		   struct idpf_tx_offload_params *off);
-void idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, uint32_t idx);
-void idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter);
+bool	idpf_ptp_is_vport_tx_tstamp_ena(struct idpf_vport *vport);
+bool	idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport);
 
-/**
- * idpf_ptp_tstamp_extend_32b_to_64b - Convert a sub-32b nanoseconds timestamp
- *				       to 64b
- * @cached_phc_time: recently cached copy of PHC time
- * @in_timestamp: Ingress/egress sub-32b nanoseconds timestamp value
- *
- * Hardware captures timestamps which contain only sub-32 bits of nominal
- * nanoseconds, as opposed to the 64bit timestamps that the stack expects.
- */
-static inline uint64_t idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
-						    uint32_t in_timestamp)
-{
-	uint32_t delta, phc_time_lo;
-	uint64_t ns;
-
-	/* Extract the lower 32 bits of the PHC time */
-	phc_time_lo = (uint32_t)cached_phc_time;
-
-	/* Calculate the delta between the lower 32bits of the cached PHC
-	 * time and the in_timestamp value.
-	 */
-	delta = in_timestamp - phc_time_lo;
-
-	if (delta > U32_MAX / 2) {
-		/* Reverse the delta calculation here */
-		delta = phc_time_lo - in_timestamp;
-		ns = cached_phc_time - delta;
-	} else {
-		ns = cached_phc_time + delta;
-	}
-
-	return ns;
-}
-
-#else /* defined(IDPF_PTP_ENABLED) */
-static inline int idpf_ptp_init(struct idpf_adapter *adapter)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline void idpf_ptp_release(struct idpf_adapter *adapter) { }
-
-static inline int idpf_ptp_get_caps(struct idpf_adapter *adapter)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline void
-idpf_ptp_get_features_access(const struct idpf_adapter *adapter) { }
-
-static inline bool
-idpf_ptp_get_txq_tstamp_capability(struct idpf_queue *txq)
-{
-	return false;
-}
-
-static inline int
-idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
-			struct idpf_ptp_dev_timers *cross_time)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int
-idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter,
-			  uint64_t time)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
-					    struct idpf_ptp_dev_timers *dev_clk_time)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter,
-					    uint64_t incval)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter,
-					    int64_t delta)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_get_tstamp_config(struct idpf_vport *vport,
-					     struct ifreq *ifr)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_set_tstamp_config(struct idpf_vport *vport,
-					     struct ifreq *ifr)
-{
-	return -EOPNOTSUPP;
-}
-
-static inline int idpf_ptp_request_ts(struct idpf_queue *tx_q,
-				      struct mbuf *m, uint32_t *idx)
-{
-	return -1;
-}
-
-static inline uint64_t idpf_ptp_extend_tstamp(const struct idpf_vport *vport,
-					 uint64_t in_tstamp)
-{
-	return 0;
-}
-
-static inline uint64_t idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
-						    uint32_t in_timestamp)
-{
-	return 0;
-}
-
-static inline void idpf_ptp_tstamp_task(void *arg, int pending) { }
-
-static inline int idpf_tx_tstamp(struct idpf_queue *tx_q, struct mbuf *m,
-				 struct idpf_tx_offload_params *off)
-{
-	return -1;
-}
-
-static inline void
-idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, uint32_t idx) { }
-
-static inline void
-idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter) {}
-#endif /* defined(IDPF_PTP_ENABLED) */
-#endif /* _IDPF_PTP_H */
+#endif /* _IDPF_PTP_H_ */

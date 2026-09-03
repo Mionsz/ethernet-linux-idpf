@@ -27,6 +27,7 @@ SRCS	+= idpf_controlq.c
 SRCS	+= idpf_controlq_setup.c
 SRCS	+= idpf_dev.c
 SRCS	+= idpf_vf_dev.c
+SRCS	+= idpf_ptp.c
 
 .if defined(ENABLE_SIOV_SUPPORT)
 SRCS	+= idpf_adi.c
@@ -35,11 +36,13 @@ CFLAGS	+= -DENABLE_SIOV_SUPPORT
 
 #
 # The Linux-only sources have been removed from the tree rather than left
-# unbuilt: ethtool, IIDC/auxiliary bus (RDMA), AF_XDP, devlink, VFIO/mdev, the
-# PTP implementation and the kcompat layer all depend on subsystems with no
-# FreeBSD counterpart, and no call site in the ported driver remains.  They are
-# recoverable from git history if a port is attempted later; idpf_ptp.h stays
-# and supplies no-op stubs.
+# unbuilt: ethtool, IIDC/auxiliary bus (RDMA), AF_XDP, devlink, VFIO/mdev and
+# the kcompat layer all depend on subsystems with no FreeBSD counterpart, and
+# no call site in the ported driver remains.  They are recoverable from git
+# history if a port is attempted later.
+#
+# idpf_ptp.c covers PTP capability negotiation and the device clock only; TX
+# timestamp latch harvest is not ported (see idpf_ptp.h).
 #
 
 CWARNFLAGS	+= -Wno-unused-parameter
