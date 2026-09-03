@@ -863,6 +863,15 @@ idpf_if_detach(if_ctx_t ctx)
 	sx_destroy(&adapter->vport_ctrl_lock);
 	mtx_destroy(&np->stats_lock);
 
+	/*
+	 * Drained again, after everything that could have re-armed them: a
+	 * callout still scheduled here fires into module text that unload has
+	 * already freed.
+	 */
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+
 	free(adapter, M_IDPF);
 	np->adapter = NULL;
 

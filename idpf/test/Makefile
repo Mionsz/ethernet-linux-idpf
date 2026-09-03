@@ -28,6 +28,7 @@ SRCS	+= idpf_controlq.c
 SRCS	+= idpf_controlq_setup.c
 SRCS	+= idpf_dev.c
 SRCS	+= idpf_vf_dev.c
+SRCS	+= idpf_ptp.c
 
 CFLAGS	+= -DIDPF_UNIT_TEST
 CFLAGS	+= -I${SRCDIR} -I${.CURDIR}
