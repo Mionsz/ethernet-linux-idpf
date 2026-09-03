@@ -4,13 +4,33 @@
 #ifndef _IDPF_PTP_H_
 #define _IDPF_PTP_H_
 
-#include <linux/clocksource.h>
-#include <linux/net_tstamp.h>
-#include <linux/kthread.h>
-#include <linux/ptp_clock_kernel.h>
-#include <linux/ptp_classify.h>
+/*
+ * FreeBSD port notes: the Linux PTP clock subsystem (ptp_clock_kernel.h) has
+ * no in-kernel counterpart, so the registration members and the
+ * container_of() helper that reached the adapter through them are gone.  The
+ * rest of the state is retyped: struct mtx becomes struct mtx, the latch
+ * lists become TAILQs, the kthread worker becomes a taskqueue with a
+ * timeout_task, and sk_buff becomes mbuf.
+ *
+ * idpf_ptp.c is not built by this port, so IDPF_PTP_ENABLED is left
+ * undefined and the no-op stubs at the end of this header are what the
+ * driver links against.  [FBSD15:A30] [LOCAL:A22]
+ */
 
-#define IDPF_PTP_VALID_BIT BIT(0)
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+#include <sys/taskqueue.h>
+#include <sys/_task.h>
+
+struct mbuf;
+struct ifreq;
+struct idpf_ptp_tx_tstamp;
+
+TAILQ_HEAD(idpf_ptp_tstamp_head, idpf_ptp_tx_tstamp);
+
+#define IDPF_PTP_VALID_BIT (1U << 0)
 
 /**
  * struct idpf_ptp_cmd - PTP command masks
@@ -18,8 +38,8 @@
  * @shtime_enable_mask: mask to enable shadow time
  */
 struct idpf_ptp_cmd {
-	u32 exec_cmd_mask;
-	u32 shtime_enable_mask;
+	uint32_t exec_cmd_mask;
+	uint32_t shtime_enable_mask;
 };
 
 /* struct idpf_ptp_dev_clk_regs - PTP device registers
@@ -43,33 +63,33 @@ struct idpf_ptp_cmd {
  */
 struct idpf_ptp_dev_clk_regs {
 	/* Main clock */
-	void __iomem *dev_clk_ns_l;
-	void __iomem *dev_clk_ns_h;
+	void *dev_clk_ns_l;
+	void *dev_clk_ns_h;
 
 	/* PHY timer */
-	void __iomem *phy_clk_ns_l;
-	void __iomem *phy_clk_ns_h;
+	void *phy_clk_ns_l;
+	void *phy_clk_ns_h;
 
 	/* System time */
-	void __iomem *sys_time_ns_l;
-	void __iomem *sys_time_ns_h;
+	void *sys_time_ns_l;
+	void *sys_time_ns_h;
 
 	/* Main timer adjustments */
-	void __iomem *incval_l;
-	void __iomem *incval_h;
-	void __iomem *shadj_l;
-	void __iomem *shadj_h;
+	void *incval_l;
+	void *incval_h;
+	void *shadj_l;
+	void *shadj_h;
 
 	/* PHY timer adjustments */
-	void __iomem *phy_incval_l;
-	void __iomem *phy_incval_h;
-	void __iomem *phy_shadj_l;
-	void __iomem *phy_shadj_h;
+	void *phy_incval_l;
+	void *phy_incval_h;
+	void *phy_shadj_l;
+	void *phy_shadj_h;
 
 	/* Command */
-	void __iomem *cmd;
-	void __iomem *phy_cmd;
-	void __iomem *cmd_sync;
+	void *cmd;
+	void *phy_cmd;
+	void *cmd_sync;
 };
 
 /**
@@ -92,8 +112,8 @@ enum idpf_ptp_access {
  *	   Plane
  */
 struct idpf_ptp_secondary_mbx {
-	u16 peer_mbx_q_id;
-	u16 peer_id;
+	uint16_t peer_mbx_q_id;
+	uint16_t peer_id;
 	bool valid:1;
 };
 
@@ -111,11 +131,11 @@ enum idpf_ptp_tx_tstamp_state {
 
 /**
  * struct idpf_ptp_tx_tstamp_status - Parameters to track Tx timestamp
- * @skb: the pointer to the SKB that received the completion tag
+ * @m: the pointer to the mbuf that received the completion tag
  * @state: the state of the Tx timestamp
  */
 struct idpf_ptp_tx_tstamp_status {
-	struct sk_buff *skb;
+	struct mbuf *m;
 	enum idpf_ptp_tx_tstamp_state state;
 };
 
@@ -124,17 +144,17 @@ struct idpf_ptp_tx_tstamp_status {
  * @list_member: the list member strutcure
  * @tx_latch_reg_offset_l: Tx tstamp latch low register offset
  * @tx_latch_reg_offset_h: Tx tstamp latch high register offset
- * @skb: the pointer to the SKB for this timestamp request
+ * @m: the pointer to the mbuf for this timestamp request
  * @tstamp: the Tx tstamp value
  * @idx: the index of the Tx tstamp
  */
 struct idpf_ptp_tx_tstamp {
-	struct list_head list_member;
-	u32 tx_latch_reg_offset_l;
-	u32 tx_latch_reg_offset_h;
-	struct sk_buff *skb;
-	u64 tstamp;
-	u32 idx;
+	TAILQ_ENTRY(idpf_ptp_tx_tstamp) list_member;
+	uint32_t tx_latch_reg_offset_l;
+	uint32_t tx_latch_reg_offset_h;
+	struct mbuf *m;
+	uint64_t tstamp;
+	uint32_t idx;
 };
 
 /**
@@ -150,27 +170,25 @@ struct idpf_ptp_tx_tstamp {
  * @tx_tstamp_status: Tx tstamp status tracker
  */
 struct idpf_ptp_vport_tx_tstamp_caps {
-	u32 vport_id;
-	u16 num_entries;
-	u16 tstamp_ns_lo_bit;
-	spinlock_t latches_lock; /* lock to free list */
-	spinlock_t status_lock; /* lock to status tracker */
+	uint32_t vport_id;
+	uint16_t num_entries;
+	uint16_t tstamp_ns_lo_bit;
+	struct mtx latches_lock; /* lock to free list */
+	struct mtx status_lock; /* lock to status tracker */
 	bool access:1;
-	struct list_head latches_free;
-	struct list_head latches_in_use;
+	struct idpf_ptp_tstamp_head latches_free;
+	struct idpf_ptp_tstamp_head latches_in_use;
 	struct idpf_ptp_tx_tstamp_status tx_tstamp_status[];
 };
 
 /**
  * struct idpf_ptp - PTP parameters
- * @info: structure defining PTP hardware capabilities
- * @clock: pointer to registered PTP clock device
  * @adapter: back pointer to the adapter
  * @base_incval: base increment value of the PTP clock
  * @max_adj: maximum adjustment of the PTP clock
  * @cmd: HW specific command masks
  * @cached_phc_time: a cached copy of the PHC time for timestamp extension
- * @cached_phc_jiffies: jiffies when cached_phc_time was last updated
+ * @cached_phc_ticks: ticks when cached_phc_time was last updated
  * @dev_clk_regs: the set of registers to access the device clock
  * @caps: PTP capabilities negotiated with the Control Plane
  * @get_dev_clk_time_access: access type for getting the device clock time
@@ -186,28 +204,24 @@ struct idpf_ptp_vport_tx_tstamp_caps {
  * @kworker: kwork thread for handling periodic work
  */
 struct idpf_ptp {
-	struct ptp_clock_info info;
-	struct ptp_clock *clock;
 	struct idpf_adapter *adapter;
-	u64 base_incval;
-	u64 max_adj;
+	uint64_t base_incval;
+	uint64_t max_adj;
 	struct idpf_ptp_cmd cmd;
-	u64 cached_phc_time;
-	unsigned long cached_phc_jiffies;
+	uint64_t cached_phc_time;
+	int cached_phc_ticks;
 	struct idpf_ptp_dev_clk_regs dev_clk_regs;
-	u32 caps;
+	uint32_t caps;
 	enum idpf_ptp_access get_dev_clk_time_access:2;
 	enum idpf_ptp_access get_cross_tstamp_access:2;
 	enum idpf_ptp_access set_dev_clk_time_access:2;
 	enum idpf_ptp_access adj_dev_clk_time_access:2;
 	enum idpf_ptp_access tx_tstamp_access:2;
-	u8 rsv:6;
+	uint8_t rsv:6;
 	struct idpf_ptp_secondary_mbx secondary_mbx;
-	spinlock_t read_dev_clk_lock;
-#ifndef HAVE_PTP_CANCEL_WORKER_SYNC
-	struct kthread_delayed_work work;
-	struct kthread_worker *kworker;
-#endif /* !HAVE_PTP_CANCEL_WORKER_SYNC */
+	struct mtx read_dev_clk_lock;
+	struct timeout_task work;
+	struct taskqueue *kworker;
 };
 
 /**
@@ -216,21 +230,9 @@ struct idpf_ptp {
  * @dev_clk_time_ns: device clock time value expressed in nanoseconds
  */
 struct idpf_ptp_dev_timers {
-	u64 sys_time_ns;
-	u64 dev_clk_time_ns;
+	uint64_t sys_time_ns;
+	uint64_t dev_clk_time_ns;
 };
-
-/**
- * idpf_ptp_info_to_adapter - get driver adapter struct from ptp_clock_info
- * @info: pointer to ptp_clock_info struct
- */
-static inline struct idpf_adapter *
-idpf_ptp_info_to_adapter(const struct ptp_clock_info *info)
-{
-	const struct idpf_ptp *ptp = container_of(info, struct idpf_ptp, info);
-
-	return ptp->adapter;
-}
 
 /**
  *idpf_ptp_is_vport_tx_tstamp_ena - Verify the Tx timestamping enablement for
@@ -274,7 +276,7 @@ static inline bool idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport)
 		return true;
 }
 
-#if IS_ENABLED(CONFIG_PTP_1588_CLOCK)
+#if defined(IDPF_PTP_ENABLED)
 int idpf_ptp_init(struct idpf_adapter *adapter);
 void idpf_ptp_release(struct idpf_adapter *adapter);
 int idpf_ptp_get_caps(struct idpf_adapter *adapter);
@@ -284,20 +286,20 @@ int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 			      struct idpf_ptp_dev_timers *dev_clk_time);
 int idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
 			    struct idpf_ptp_dev_timers *cross_time);
-int idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter, u64 time);
-int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, u64 incval);
-int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter, s64 delta);
+int idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter, uint64_t time);
+int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter, uint64_t incval);
+int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter, int64_t delta);
 int idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport);
 int idpf_ptp_get_tx_tstamp(struct idpf_vport *vport);
 int idpf_ptp_get_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr);
 int idpf_ptp_set_tstamp_config(struct idpf_vport *vport, struct ifreq *ifr);
-int idpf_ptp_request_ts(struct idpf_queue *tx_q, struct sk_buff *skb,
-			u32 *idx);
-u64 idpf_ptp_extend_tstamp(struct idpf_vport *vport, u64 in_tstamp);
-void idpf_ptp_tstamp_task(struct work_struct *work);
-int idpf_tx_tstamp(struct idpf_queue *tx_q, struct sk_buff *skb,
+int idpf_ptp_request_ts(struct idpf_queue *tx_q, struct mbuf *m,
+			uint32_t *idx);
+uint64_t idpf_ptp_extend_tstamp(struct idpf_vport *vport, uint64_t in_tstamp);
+void idpf_ptp_tstamp_task(void *arg, int pending);
+int idpf_tx_tstamp(struct idpf_queue *tx_q, struct mbuf *m,
 		   struct idpf_tx_offload_params *off);
-void idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, u32 idx);
+void idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, uint32_t idx);
 void idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter);
 
 /**
@@ -309,14 +311,14 @@ void idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter);
  * Hardware captures timestamps which contain only sub-32 bits of nominal
  * nanoseconds, as opposed to the 64bit timestamps that the stack expects.
  */
-static inline u64 idpf_ptp_tstamp_extend_32b_to_64b(u64 cached_phc_time,
-						    u32 in_timestamp)
+static inline uint64_t idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
+						    uint32_t in_timestamp)
 {
-	u32 delta, phc_time_lo;
-	u64 ns;
+	uint32_t delta, phc_time_lo;
+	uint64_t ns;
 
 	/* Extract the lower 32 bits of the PHC time */
-	phc_time_lo = (u32)cached_phc_time;
+	phc_time_lo = (uint32_t)cached_phc_time;
 
 	/* Calculate the delta between the lower 32bits of the cached PHC
 	 * time and the in_timestamp value.
@@ -334,7 +336,7 @@ static inline u64 idpf_ptp_tstamp_extend_32b_to_64b(u64 cached_phc_time,
 	return ns;
 }
 
-#else /* IS_ENABLED(CONFIG_PTP_1588_CLOCK) */
+#else /* defined(IDPF_PTP_ENABLED) */
 static inline int idpf_ptp_init(struct idpf_adapter *adapter)
 {
 	return -EOPNOTSUPP;
@@ -365,7 +367,7 @@ idpf_ptp_get_cross_time(struct idpf_adapter *adapter,
 
 static inline int
 idpf_ptp_set_dev_clk_time(struct idpf_adapter *adapter,
-			  u64 time)
+			  uint64_t time)
 {
 	return -EOPNOTSUPP;
 }
@@ -377,13 +379,13 @@ static inline int idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 }
 
 static inline int idpf_ptp_adj_dev_clk_fine(struct idpf_adapter *adapter,
-					    u64 incval)
+					    uint64_t incval)
 {
 	return -EOPNOTSUPP;
 }
 
 static inline int idpf_ptp_adj_dev_clk_time(struct idpf_adapter *adapter,
-					    s64 delta)
+					    int64_t delta)
 {
 	return -EOPNOTSUPP;
 }
@@ -411,35 +413,35 @@ static inline int idpf_ptp_set_tstamp_config(struct idpf_vport *vport,
 }
 
 static inline int idpf_ptp_request_ts(struct idpf_queue *tx_q,
-				      struct sk_buff *skb, u32 *idx)
+				      struct mbuf *m, uint32_t *idx)
 {
 	return -1;
 }
 
-static inline u64 idpf_ptp_extend_tstamp(const struct idpf_vport *vport,
-					 u64 in_tstamp)
+static inline uint64_t idpf_ptp_extend_tstamp(const struct idpf_vport *vport,
+					 uint64_t in_tstamp)
 {
 	return 0;
 }
 
-static inline u64 idpf_ptp_tstamp_extend_32b_to_64b(u64 cached_phc_time,
-						    u32 in_timestamp)
+static inline uint64_t idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
+						    uint32_t in_timestamp)
 {
 	return 0;
 }
 
-static inline void idpf_ptp_tstamp_task(struct work_struct *work) { }
+static inline void idpf_ptp_tstamp_task(void *arg, int pending) { }
 
-static inline int idpf_tx_tstamp(struct idpf_queue *tx_q, struct sk_buff *skb,
+static inline int idpf_tx_tstamp(struct idpf_queue *tx_q, struct mbuf *m,
 				 struct idpf_tx_offload_params *off)
 {
 	return -1;
 }
 
 static inline void
-idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, u32 idx) { }
+idpf_tx_set_tstamp_desc(union idpf_flex_tx_ctx_desc *ctx_desc, uint32_t idx) { }
 
 static inline void
 idpf_ptp_set_rx_tstamp(struct idpf_vport *vport, int rx_filter) {}
-#endif /* IS_ENABLED(CONFIG_PTP_1588_CLOCK) */
+#endif /* defined(IDPF_PTP_ENABLED) */
 #endif /* _IDPF_PTP_H */

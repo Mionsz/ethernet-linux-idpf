@@ -4,19 +4,88 @@
 #ifndef _IDPF_MEM_H_
 #define _IDPF_MEM_H_
 
-#include "kcompat.h"
-#include <linux/io.h>
+/*
+ * DMA memory descriptor and mailbox register accessors used by the control
+ * queue layer.
+ *
+ * FreeBSD port notes
+ * ------------------
+ * dma_addr_t becomes bus_addr_t, and the descriptor carries the bus_dma tag
+ * and map that idpf_alloc_dma_mem() creates, because FreeBSD needs both to
+ * release the mapping again.
+ *
+ * The mailbox accessors are the same MMIO seam as idpf_reg_wr32() in
+ * idpf_txrx.h, restated here because this is the lowest-level header in the
+ * driver and cannot include the datapath one.  [FBSD15:A31]
+ */
+
+#include <sys/param.h>
+#include <sys/endian.h>
+#include <sys/systm.h>
+
+#include <machine/atomic.h>
+#include <machine/bus.h>
+
+struct idpf_hw;
 
 struct idpf_dma_mem {
-	void *va;
-	dma_addr_t pa;
-	size_t size;
+	void		*va;
+	bus_addr_t	 pa;
+	bus_size_t	 size;
+	bus_dma_tag_t	 tag;
+	bus_dmamap_t	 map;
 };
 
-#define idpf_mbx_wr32(a, reg, value)   writel((value), ((a)->mbx.vaddr + (reg)))
-#define idpf_mbx_rd32(a, reg)          readl((a)->mbx.vaddr + (reg))
-#define idpf_mbx_wr64(a, reg, value)   writeq((value), ((a)->mbx.vaddr + (reg)))
-#define idpf_mbx_rd64(a, reg)          readq((a)->mbx.vaddr + (reg))
+void *idpf_alloc_dma_mem(struct idpf_hw *hw, struct idpf_dma_mem *mem,
+    uint64_t size);
+void idpf_free_dma_mem(struct idpf_hw *hw, struct idpf_dma_mem *mem);
+
+static inline void
+idpf_mmio_wr32(void *addr, uint32_t value)
+{
+
+	atomic_thread_fence_rel();
+	*(volatile uint32_t *)addr = htole32(value);
+}
+
+static inline uint32_t
+idpf_mmio_rd32(void *addr)
+{
+	uint32_t value;
+
+	value = le32toh(*(volatile uint32_t *)addr);
+	atomic_thread_fence_acq();
+
+	return (value);
+}
+
+static inline void
+idpf_mmio_wr64(void *addr, uint64_t value)
+{
+
+	atomic_thread_fence_rel();
+	*(volatile uint64_t *)addr = htole64(value);
+}
+
+static inline uint64_t
+idpf_mmio_rd64(void *addr)
+{
+	uint64_t value;
+
+	value = le64toh(*(volatile uint64_t *)addr);
+	atomic_thread_fence_acq();
+
+	return (value);
+}
+
+#define idpf_mbx_wr32(a, reg, value) \
+	idpf_mmio_wr32((uint8_t *)(a)->mbx.vaddr + (reg), (value))
+#define idpf_mbx_rd32(a, reg) \
+	idpf_mmio_rd32((uint8_t *)(a)->mbx.vaddr + (reg))
+#define idpf_mbx_wr64(a, reg, value) \
+	idpf_mmio_wr64((uint8_t *)(a)->mbx.vaddr + (reg), (value))
+#define idpf_mbx_rd64(a, reg) \
+	idpf_mmio_rd64((uint8_t *)(a)->mbx.vaddr + (reg))
 
 #define wr32(a, reg, value)	idpf_mbx_wr32(a, reg, value)
 #define rd32(a, reg)		idpf_mbx_rd32(a, reg)

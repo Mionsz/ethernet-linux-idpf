@@ -4,9 +4,35 @@
 #ifndef _IDPF_CONTROLQ_API_H_
 #define _IDPF_CONTROLQ_API_H_
 
+/*
+ * Control queue API shared between the LAN driver and the common control
+ * queue implementation.
+ *
+ * FreeBSD port notes
+ * ------------------
+ *   struct list_head       -> TAILQ_ENTRY / TAILQ_HEAD
+ *   spinlock_t             -> struct mtx (MTX_DEF, taken from process and
+ *                             taskqueue context only)
+ *   void __iomem *         -> void * (offset into the single BAR0 mapping;
+ *                             reach it through the accessors in idpf_mem.h)
+ *   resource_size_t        -> bus_size_t
+ *   u8/u16/u32/u64         -> uint8_t/uint16_t/uint32_t/uint64_t
+ * [FBSD15:A30-A32]
+ */
+
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+
+#include <machine/bus.h>
+
 #include "idpf_mem.h"
 
 struct idpf_hw;
+struct idpf_ctlq_info;
+
+TAILQ_HEAD(idpf_ctlq_head, idpf_ctlq_info);
 
 /* Used for queue init, response and events */
 enum idpf_ctlq_type {
@@ -23,39 +49,39 @@ enum idpf_ctlq_type {
 /* Generic Control Queue Structures */
 struct idpf_ctlq_reg {
 	/* used for queue tracking */
-	u32 head;
-	u32 tail;
+	uint32_t head;
+	uint32_t tail;
 	/* Below applies only to default mb (if present) */
-	u32 len;
-	u32 bah;
-	u32 bal;
-	u32 len_mask;
-	u32 len_ena_mask;
-	u32 head_mask;
+	uint32_t len;
+	uint32_t bah;
+	uint32_t bal;
+	uint32_t len_mask;
+	uint32_t len_ena_mask;
+	uint32_t head_mask;
 };
 
 /* Generic queue msg structure */
 struct idpf_ctlq_msg {
-	u8 vmvf_type; /* represents the source of the message on recv */
+	uint8_t vmvf_type; /* represents the source of the message on recv */
 #define IDPF_VMVF_TYPE_VF 0
 #define IDPF_VMVF_TYPE_VM 1
 #define IDPF_VMVF_TYPE_PF 2
-	u8 host_id;
+	uint8_t host_id;
 	/* 3b field used only when sending a message to peer - to be used in
 	 * combination with target func_id to route the message
 	 */
 #define IDPF_HOST_ID_MASK 0x7
 
-	u16 opcode;
-	u16 data_len;	/* data_len = 0 when no payload is attached */
+	uint16_t opcode;
+	uint16_t data_len;	/* data_len = 0 when no payload is attached */
 	union {
-		u16 func_id;	/* when sending a message */
-		u16 status;	/* when receiving a message */
+		uint16_t func_id;	/* when sending a message */
+		uint16_t status;	/* when receiving a message */
 	};
 	union {
 		struct {
-			u32 chnl_opcode;
-			u32 chnl_retval;
+			uint32_t chnl_opcode;
+			uint32_t chnl_retval;
 		} mbx;
 	} cookie;
 	union {
@@ -64,15 +90,15 @@ struct idpf_ctlq_msg {
 		/* 16 bytes of context can be provided or 8 bytes of context
 		 * plus the address of a DMA buffer
 		 */
-		u8 direct[IDPF_DIRECT_CTX_SIZE];
+		uint8_t direct[IDPF_DIRECT_CTX_SIZE];
 		struct {
-			u8 context[IDPF_INDIRECT_CTX_SIZE];
+			uint8_t context[IDPF_INDIRECT_CTX_SIZE];
 			struct idpf_dma_mem *payload;
 		} indirect;
 		struct {
-			u32 rsvd;
-			u16 data;
-			u16 flags;
+			uint32_t rsvd;
+			uint16_t data;
+			uint16_t flags;
 		} sw_cookie;
 	} ctx;
 };
@@ -84,9 +110,9 @@ struct idpf_ctlq_create_info {
 	int id; /* absolute queue offset passed as input
 		 * -1 for default mailbox if present
 		 */
-	u16 len; /* Queue length passed as input */
-	u16 buf_size; /* buffer size passed as input */
-	u64 base_address; /* output, HPA of the Queue start  */
+	uint16_t len; /* Queue length passed as input */
+	uint16_t buf_size; /* buffer size passed as input */
+	uint64_t base_address; /* output, HPA of the Queue start  */
 	struct idpf_ctlq_reg reg; /* registers accessed by ctlqs */
 
 	int ext_info_size;
@@ -95,30 +121,28 @@ struct idpf_ctlq_create_info {
 
 /* Control Queue information */
 struct idpf_ctlq_info {
-	struct list_head cq_list;
+	TAILQ_ENTRY(idpf_ctlq_info) cq_list;
 
 	enum idpf_ctlq_type cq_type;
 	int q_id;
-	spinlock_t cq_lock;		/* queue lock
-					 * idpf_lock is defined in OSdep.h
-					 */
+	struct mtx cq_lock;		/* queue lock */
+
 	/* used for interrupt processing */
-	u16 next_to_use;
-	u16 next_to_clean;
-	u16 next_to_post;		/* starting descriptor to post buffers
+	uint16_t next_to_use;
+	uint16_t next_to_clean;
+	uint16_t next_to_post;		/* starting descriptor to post buffers
 					 * to after recev
 					 */
 
-	struct idpf_dma_mem desc_ring;	/* descriptor ring memory
-					 * idpf_dma_mem is defined in OSdep.h
-					 */
+	struct idpf_dma_mem desc_ring;	/* descriptor ring memory */
+
 	union {
 		struct idpf_dma_mem **rx_buff;
 		struct idpf_ctlq_msg **tx_msg;
 	} bi;
 
-	u16 buf_size;			/* queue buffer size */
-	u16 ring_size;			/* Number of descriptors */
+	uint16_t buf_size;		/* queue buffer size */
+	uint16_t ring_size;		/* Number of descriptors */
 	struct idpf_ctlq_reg reg;	/* registers accessed by ctlqs */
 };
 
@@ -155,9 +179,9 @@ enum idpf_mbx_opc {
 #define IDPF_MMIO_MAP_FALLBACK_MAX_REMAINING		3
 
 struct idpf_mmio_reg {
-	void __iomem *vaddr;
-	resource_size_t addr_start;
-	resource_size_t addr_len;
+	void		*vaddr;
+	bus_size_t	 addr_start;
+	bus_size_t	 addr_len;
 };
 
 /* Define the APF hardware struct to replace other control structs as needed
@@ -180,21 +204,21 @@ struct idpf_hw {
 	struct idpf_ctlq_info *arq;
 
 	/* pci info */
-	u16 device_id;
-	u16 vendor_id;
-	u16 subsystem_device_id;
-	u16 subsystem_vendor_id;
-	u8 revision_id;
+	uint16_t device_id;
+	uint16_t vendor_id;
+	uint16_t subsystem_device_id;
+	uint16_t subsystem_vendor_id;
+	uint8_t revision_id;
 	bool adapter_stopped;
 
-	struct list_head cq_list_head;
+	struct idpf_ctlq_head cq_list_head;
 };
 
 /* API supported for control queue management */
 /* Will init all required q including default mb.  "q_info" is an array of
  * create_info structs equal to the number of control queues to be created.
  */
-int idpf_ctlq_init(struct idpf_hw *hw, u8 num_q,
+int idpf_ctlq_init(struct idpf_hw *hw, uint8_t num_q,
 		   struct idpf_ctlq_create_info *q_info);
 
 /* Allocate and initialize a single control queue, which will be added to the
@@ -211,27 +235,27 @@ void idpf_ctlq_remove(struct idpf_hw *hw,
 /* Sends messages to HW and will also free the buffer */
 int idpf_ctlq_send(struct idpf_hw *hw,
 		   struct idpf_ctlq_info *cq,
-		   u16 num_q_msg,
+		   uint16_t num_q_msg,
 		   struct idpf_ctlq_msg q_msg[]);
 
 /* Receives messages and called by interrupt handler/polling
  * initiated by app/process. Also caller is supposed to free the buffers
  */
-int idpf_ctlq_recv(struct idpf_ctlq_info *cq, u16 *num_q_msg,
+int idpf_ctlq_recv(struct idpf_ctlq_info *cq, uint16_t *num_q_msg,
 		   struct idpf_ctlq_msg *q_msg);
 
 /* Reclaims all descriptors on HW write back */
-int idpf_ctlq_clean_sq_force(struct idpf_ctlq_info *cq, u16 *clean_count,
-		             struct idpf_ctlq_msg *msg_status[]);
+int idpf_ctlq_clean_sq_force(struct idpf_ctlq_info *cq, uint16_t *clean_count,
+			     struct idpf_ctlq_msg *msg_status[]);
 
 /* Reclaims send descriptors on HW write back */
-int idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, u16 *clean_count,
+int idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, uint16_t *clean_count,
 		       struct idpf_ctlq_msg *msg_status[]);
 
 /* Indicate RX buffers are done being processed */
 int idpf_ctlq_post_rx_buffs(struct idpf_hw *hw,
 			    struct idpf_ctlq_info *cq,
-			    u16 *buff_count,
+			    uint16_t *buff_count,
 			    struct idpf_dma_mem **buffs);
 
 /* Will destroy all q including the default mb */

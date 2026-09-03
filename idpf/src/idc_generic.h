@@ -4,13 +4,41 @@
 #ifndef _IDC_GENERIC_H_
 #define _IDC_GENERIC_H_
 
-/* Terminology
- * mfd: multi function device/driver that maintains and shares the data for the
- * mfd cell
- * mfd cell: Device/driver that depends on mfd for its hw data
+/*
+ * Inter-Driver Communication (IDC) contract between the LAN driver and a
+ * dependent driver such as RDMA.
+ *
+ * Terminology
+ * -----------
+ * mfd       the multi-function driver that owns the hardware and shares it
+ * mfd cell  the dependent driver that consumes the shared hardware data
+ *
+ * FreeBSD port notes
+ * ------------------
+ * Linux implements the split with the MFD subsystem: the LAN driver calls
+ * mfd_add_devices() and the dependent driver registers a platform_driver
+ * whose id_table selects it.  FreeBSD has no MFD subsystem; the equivalent is
+ * a newbus child device created with device_add_child() and probed by its own
+ * driver.  The mechanism therefore belongs to the attach path, not to this
+ * header, and only the data contract survives the port:
+ *
+ *   struct pci_dev *pdev      -> device_t dev
+ *   u8 __iomem *hw_addr       -> void *hw_addr (offset into the BAR0 mapping)
+ *   struct msix_entry *        -> vector index base plus count
+ *   struct net_device *netdev  -> if_t ifp
+ *   struct __idc_mfd_data      -> removed (Linux platform-data wrapper)
+ *
+ * The IDC path is not wired up by this port: idpf_dev_ops_init() does not
+ * install an idc_init hook and nothing includes this header yet.  It is kept
+ * so the contract stays reviewable alongside the rest of the driver.
+ * [FBSD15:A30-A31] [LOCAL:A22]
  */
 
-#include <linux/mfd/core.h>
+#include <sys/param.h>
+#include <sys/bus.h>
+
+#include <net/if.h>
+#include <net/if_var.h>
 
 /* Unique names used to match and load mfd cells */
 #define IDC_MFD_CELL_NAME_RDMA		"rdma"
@@ -20,7 +48,6 @@
 #define IDC_MFD_CELL_ID_RDMA_VF	0x2
 #define IDC_MFD_CELL_ID_MAX	0x3
 
-/* TODO: Revisit and move to virtchnl method of versioning */
 /* Version info used to check for compatibility between mfd and mfd cell */
 #define IDC_MAJOR_VER		1
 #define IDC_MINOR_VER		1
@@ -52,140 +79,121 @@ enum idc_event {
 
 /* Version info used to check for compatibility between mfd and mfd cells */
 struct idc_ver_info {
-	u16 major;
-	u16 minor;
+	uint16_t major;
+	uint16_t minor;
 };
 
 /* QoS info */
 struct idc_qos_params {
-	u8 rel_bw[IDC_QOS_MAX_TC];
-	u8 up2tc[IDC_QOS_MAX_USER_PRIORITY];
-	u32 num_apps;
-	u8 num_tc;
-	u8 prio_type[IDC_QOS_MAX_TC];
-	u64 tc_ctx[IDC_QOS_MAX_TC];
-	u8 vport_relative_bw;
-	u8 vport_priority_type;
+	uint8_t  rel_bw[IDC_QOS_MAX_TC];
+	uint8_t  up2tc[IDC_QOS_MAX_USER_PRIORITY];
+	uint32_t num_apps;
+	uint8_t  num_tc;
+	uint8_t  prio_type[IDC_QOS_MAX_TC];
+	uint64_t tc_ctx[IDC_QOS_MAX_TC];
+	uint8_t  vport_relative_bw;
+	uint8_t  vport_priority_type;
 };
 
 /* RDMA queue vector map info */
 struct idc_qv_info {
-	u32 v_idx;
-	u16 ceq_idx;
-	u16 aeq_idx;
-	u8 itr_idx;
+	uint32_t v_idx;
+	uint16_t ceq_idx;
+	uint16_t aeq_idx;
+	uint8_t  itr_idx;
 };
 
 struct idc_qvlist_info {
-	u32 num_vectors;
-	struct idc_qv_info qv_info[1];
+	uint32_t num_vectors;
+	struct idc_qv_info qv_info[];
 };
 
-/* Following APIs are implemented by mfd and invoked by mfd cells */
+/* Implemented by the mfd, invoked by the mfd cell */
 struct idc_mfd_ops {
-	/* Called by mfd cell to indicate probe finished */
+	/* Called by the mfd cell to indicate probe finished */
 	int (*probe_finished)(struct idc_mfd_data *mfd_data);
-	/* Called by mfd cell to indicate remove started */
+	/* Called by the mfd cell to indicate remove started */
 	void (*remove_started)(struct idc_mfd_data *mfd_data);
-	/* Called by mfd cell to indicate remove finished */
+	/* Called by the mfd cell to indicate remove finished */
 	void (*remove_finished)(struct idc_mfd_data *mfd_data);
-	/* Used by mfd cell to request a reset on mfd */
+	/* Used by the mfd cell to request a reset on the mfd */
 	int (*request_reset)(struct idc_mfd_data *mfd_data,
 			     enum idc_reset_type reset_type);
-	/* Used by mfd cell to send mailbox messages */
-	int (*vc_send)(struct idc_mfd_data *mfd_data, u32 f_id, u8 *msg,
-		       u16 len);
-	/* used by mfd cell to send map unmap vector mailbox message. This
-	 * message uses a different vc opcode and so different callback other
-	 * than vc_send
+	/* Used by the mfd cell to send mailbox messages */
+	int (*vc_send)(struct idc_mfd_data *mfd_data, uint32_t f_id,
+		       uint8_t *msg, uint16_t len);
+	/*
+	 * Map or unmap queue vectors.  This uses a different virtchnl opcode
+	 * from vc_send and therefore a separate callback.
 	 */
 	int (*vc_queue_vec_map_unmap)(struct idc_mfd_data *mfd_data,
 				      struct idc_qvlist_info *qvl_info,
 				      bool map);
 };
 
-/* Following APIs are implemented by mfd cells and invoked by mfd */
+/* Implemented by the mfd cell, invoked by the mfd */
 struct idc_mfd_cell_ops {
-	/* Why we have 'open' and when it is expected to be called:
-	 * 1. symmetric set of API w.r.t close
-	 * 2. To be invoked form driver initialization path, should be probe
-	 * 3. To be invoked upon RESET complete
+	/*
+	 * open is called from the mfd cell's attach path and again once a
+	 * reset completes.  It is the symmetric counterpart of close.
 	 */
 	int (*open)(struct idc_mfd_data *mfd_data);
 
-	/* close function is to be called when the mfd cell needs to be
-	 * quiesced. This can be for a variety of reasons (enumerated in the
-	 * idc_close_reason enum struct). A call to close will only be
-	 * followed by a call to either remove or open. No IDC calls from the
-	 * mfd cell should be accepted until it is re-opened.
-	 *
-	 * The *reason* parameter is the reason for the call to close. This
-	 * can be for any reason enumerated in the idc_close_reason struct.
-	 * It's primary reason is for the mfd drivers bookkeeping and in
-	 * case the mfd cell wants to perform any different tasks
-	 * dictated by the reason.
+	/*
+	 * close quiesces the mfd cell.  It is followed by either remove or
+	 * open, and no IDC call from the cell may be accepted in between.
+	 * @reason lets the cell adapt its teardown to the situation.
 	 */
 	int (*close)(struct idc_mfd_data *mfd_data,
-		      enum idc_close_reason reason);
-	/* Used by mfd to pass received mailbox messages to mfd cell */
-	int (*vc_receive)(struct idc_mfd_data *mfd_data, u32 f_id, u8 *msg,
-			  u16 len);
-	/* used by mfd to inform various software events */
+		     enum idc_close_reason reason);
+	/* Used by the mfd to hand received mailbox messages to the cell */
+	int (*vc_receive)(struct idc_mfd_data *mfd_data, uint32_t f_id,
+			  uint8_t *msg, uint16_t len);
+	/* Used by the mfd to report software events */
 	int (*event)(struct idc_mfd_data *mfd_data, enum idc_event event);
 };
 
-/* Structure representing idc multi function device data  Initial steps for
- * sharing info is listed below
- * 1.mfd registers shared data with OS
- * 2.mfd cell registers platform_drv with OS
- * 3.mfd cell probe is called by OS
- *      Match of id_entry of mfd and id_table of mfd cell determines
- *      which probe has to be called
- * 4 probe_finished func of mfd will be called by mfd cell probe
- * 5.open function of mfd cell is called by mfd
- *.6 close function of mfd cell is called by mfd when mfd goes down
+/*
+ * Data shared between the mfd and its cells.  Bring-up order:
+ *   1. the mfd fills in the fields it owns and creates the child device
+ *   2. the child's driver probes and attaches
+ *   3. the cell fills in mfd_cell_ver and mfd_cell_ops
+ *   4. the cell calls probe_finished()
+ *   5. the mfd calls open()
+ *   6. the mfd calls close() when it goes down
  */
 struct idc_mfd_data {
-	/* Below fields are initialized by mfd. Done before calling
-	 * mfd_add_devices OS API
-	 */
-	/* PCI device corresponding to main function  Used by mfd cell
-	 * for dma memory allocations and BAR4 access
-	 */
-	struct pci_dev *pdev;
-	/* Linear address corresponding to BAR0 of underlying
-	 * pci_device. Used by mfd cell for register space access
-	 */
-	u8 __iomem *hw_addr;
+	/* Owned by the mfd, valid before the child device is created. */
 
-	/* Vector info to be used by mfd cell */
-	struct msix_entry *msix_entries;
-	/* Number of vectors reserved for the mfd cell */
-	u16 msix_count;
-	/* Used by mfd cell for version checks */
-	struct idc_ver_info mfd_ver;
-	/* mfd function type pf or vf */
-	int func_type;
-	/* net device interface owned by mfd */
-	struct net_device *netdev;
-	/* TC info */
-	struct idc_qos_params qos_info;
-	/* Function pointers to be initialized by mfd and called by mfd cell
+	/* PCI device of the main function; used by the cell for DMA */
+	device_t dev;
+	/*
+	 * Host-virtual address of the shared register window, computed as an
+	 * offset into the LAN driver's single BAR0 mapping.  Access it with
+	 * the MMIO seam, not by dereferencing it directly.
 	 */
+	void *hw_addr;
+
+	/* First MSI-X vector reserved for the cell, and how many follow */
+	uint16_t msix_base;
+	uint16_t msix_count;
+	/* Used by the cell for version checks */
+	struct idc_ver_info mfd_ver;
+	/* PF or VF */
+	int func_type;
+	/* Network interface owned by the mfd */
+	if_t ifp;
+	/* Traffic class configuration */
+	struct idc_qos_params qos_info;
+	/* Filled in by the mfd, called by the cell */
 	struct idc_mfd_ops mfd_ops;
 
-	/* Below fields are initialized by mfd cell. Done before calling
-	 * probe_finished function of mfd
-	 */
-	/* used by mfd for version checks */
+	/* Owned by the cell, valid before it calls probe_finished(). */
+
+	/* Used by the mfd for version checks */
 	struct idc_ver_info mfd_cell_ver;
-	/* Function pointers to be initialized by mfd cell and called by mfd
-	 */
+	/* Filled in by the cell, called by the mfd */
 	struct idc_mfd_cell_ops mfd_cell_ops;
 };
 
-/* Structure representing the multi function device data to be shared */
-struct __idc_mfd_data {
-	struct idc_mfd_data *mfd_data;
-};
-#endif /* _IDC_GENERIC_H_*/
+#endif /* _IDC_GENERIC_H_ */

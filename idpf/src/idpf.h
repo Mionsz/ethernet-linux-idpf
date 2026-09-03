@@ -1,1502 +1,1310 @@
-/* SPDX-License-Identifier: GPL-2.0-only */
+/* SPDX-License-Identifier: BSD-2-Clause */
 /* Copyright (C) 2019-2026 Intel Corporation */
+
+/*
+ * idpf.h — FreeBSD >= 15.0 IDPF VF-DPF driver master header.
+ *
+ * CONVERSION NOTES (evidence class per Human Reference Guide Appendix A):
+ *
+ *  [FBSD15:A30-A34]  FreeBSD 15 kernel interfaces are authoritative.
+ *  [IDPF:A13-A14]    Virtchnl2 / IDPF 1.0 protocol structures retained.
+ *  [LOCAL:A20-A25]   Current skeleton file shapes preserved.
+ *  [PROPOSED:A38]    TARGET DESIGN items marked; not yet implemented.
+ *  [ON_HOLD]         Items blocked by named contradictions in Appendix L.
+ *
+ * Removed entirely (Linux-only, no FreeBSD equivalent in scope):
+ *   kcompat.h, all linux/ and net/ Linux headers, XDP/AF_XDP, VDCM/MDEV,
+ *   devlink, IDC/IIDC, ethtool_netlink, TC/MQPRIO, tunnel offload guards,
+ *   HAVE_* / CONFIG_* / DEVLINK_ENABLED / IDPF_ADD_PROBES conditional blocks,
+ *   NETIF_MSG_*, NETIF_F_*, u64_stats_sync, DECLARE_BITMAP, spinlock_t,
+ *   wait_queue_head_t, work_struct/delayed_work (replaced by FreeBSD
+ *   taskqueue/callout), struct net_device (replaced by if_ctx_t / ifnet *),
+ *   struct msix_entry (replaced by struct resource *), hwtstamp_config,
+ *   ethtool_rx_flow_spec, cpumask_t/irq_affinity_notify, list_head
+ *   (replaced by TAILQ), rtnl_link_stats64 (replaced by if_data).
+ *
+ * Core method names are NOT renamed per architectural constraint.
+ */
 
 #ifndef _IDPF_H_
 #define _IDPF_H_
 
-/* Forward declaration */
+/* -----------------------------------------------------------------------
+ * FreeBSD kernel headers — authoritative for all OS-facing contracts.
+ * [FBSD15:A30-A34]
+ * ----------------------------------------------------------------------- */
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/bus.h>
+#include <sys/endian.h>
+#include <sys/kernel.h>
+#include <sys/lock.h>
+#include <sys/malloc.h>
+#include <sys/module.h>
+#include <sys/mutex.h>
+#include <sys/queue.h>
+#include <sys/rman.h>
+#include <sys/socket.h>
+#include <sys/sx.h>
+#include <sys/sysctl.h>
+#include <sys/taskqueue.h>
+#include <sys/callout.h>
+#include <sys/condvar.h>
+
+#include <machine/bus.h>
+#include <machine/resource.h>
+
+#include <net/ethernet.h>
+#include <net/if.h>
+#include <net/if_var.h>
+#include <net/if_dl.h>
+#include <net/if_media.h>
+#include <net/if_types.h>
+#include <net/iflib.h>
+
+#include <dev/pci/pcivar.h>
+#include <dev/pci/pcireg.h>
+
+/* -----------------------------------------------------------------------
+ * Shared IDPF / Virtchnl2 protocol headers.
+ * These are carried source; edits must comply with carried_source_edit_policy.
+ * [IDPF:A13-A14] [LOCAL:A17]
+ * ----------------------------------------------------------------------- */
+#include "virtchnl2.h"
+#include "idpf_txrx.h"
+#include "idpf_controlq.h"
+#include "idpf_devids.h"
+
+/*
+ * idpf_adi.h is retained: ADI lifecycle events are CONDITIONAL but the
+ * header is shared protocol material.  [LOCAL:A18]
+ */
+#include "idpf_adi.h"
+
+/* -----------------------------------------------------------------------
+ * Forward declarations
+ * ----------------------------------------------------------------------- */
 struct idpf_adapter;
 struct idpf_vport;
 struct idpf_vport_max_q;
 struct idpf_q_vec_rsrc;
 struct idpf_rss_data;
 
-/* Because of the header files order dependency in OOT, include kcompat.h first.
- * This applies to all other files which include kcompat.h
- */
-#include "kcompat.h"
-#include <net/pkt_sched.h>
-#ifdef __TC_MQPRIO_MODE_MAX
-#include <net/pkt_cls.h>
-#endif /* __TC_MQPRIO_MODE_MAX */
-#include <linux/bitfield.h>
-#include <linux/completion.h>
-#include <linux/etherdevice.h>
-#include <linux/ioport.h>
-#include <linux/pci.h>
-#include <linux/sctp.h>
-#if IS_ENABLED(CONFIG_ETHTOOL_NETLINK)
-#include <linux/ethtool_netlink.h>
-#endif /* CONFIG_ETHTOOL_NETLINK */
-#include <linux/uio.h>
-#include <net/ip6_checksum.h>
-#ifdef HAVE_VXLAN_RX_OFFLOAD
-#if IS_ENABLED(CONFIG_VXLAN)
-#include <net/vxlan.h>
-#endif
-#endif /* HAVE_VXLAN_RX_OFFLOAD */
-#ifdef HAVE_GRE_ENCAP_OFFLOAD
-#include <net/gre.h>
-#endif /* HAVE_GRE_ENCAP_OFFLOAD */
-#ifdef HAVE_GENEVE_RX_OFFLOAD
-#if IS_ENABLED(CONFIG_GENEVE)
-#include <net/geneve.h>
-#endif
-#endif /* HAVE_GENEVE_RX_OFFLOAD */
-#ifdef HAVE_UDP_ENC_RX_OFFLOAD
-#include <net/udp_tunnel.h>
-#endif
+/* -----------------------------------------------------------------------
+ * Driver identity
+ * ----------------------------------------------------------------------- */
+#define IDPF_DRV_NAME   "idpf"
+#define IDPF_DRV_VER    "1.0.15"
 
-#define IDPF_DRV_NAME "idpf"
-#define IDPF_DRV_VER "1.0.14"
+/* Bit-field helper — protocol-internal, retained from Linux baseline. */
+#define IDPF_M(m, s)    ((m) << (s))
 
-#define IDPF_M(m, s)	((m) << (s))
+/* -----------------------------------------------------------------------
+ * Mailbox / control-queue constants  [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
+#define IDPF_CTLQ_MAX_BUF_LEN           4096    /* SZ_4K equivalent */
+#define IDPF_NUM_FILTERS_PER_MSG        20
+#define IDPF_NUM_DFLT_MBX_Q            2       /* TX + RX */
+#define IDPF_DFLT_MBX_Q_LEN            64
+#define IDPF_DFLT_MBX_ID               (-1)
+#define IDPF_MB_MAX_ERR                 20
+#define IDPF_NUM_CHUNKS_PER_MSG(struct_sz, chunk_sz) \
+        ((IDPF_CTLQ_MAX_BUF_LEN - (struct_sz)) / (chunk_sz))
 
-#include "virtchnl2.h"
-#include "idpf_txrx.h"
-#include "idpf_controlq.h"
-#include "idpf_devids.h"
-#ifdef HAVE_XDP_SUPPORT
-#include <linux/bpf_trace.h>
-#include <linux/filter.h>
-#include <linux/bpf.h>
-#endif /* HAVE_XDP_SUPPORT */
-#ifdef HAVE_NETDEV_BPF_XSK_POOL
-#include "idpf_xsk.h"
-#endif /* HAVE_NETDEV_BPF_XSK_POOL */
-#ifdef DEVLINK_ENABLED
-#include "idpf_devlink.h"
-#endif /* DEVLINK_ENABLED */
-#include "idpf_adi.h"
-#include "iidc.h"
+/* -----------------------------------------------------------------------
+ * Reset / recovery timing constants
+ * NOTE: IDPF_HARD_RESET_TIMEOUT_MSEC and retry policy are subject to
+ * Appendix L contradiction L-C03 (short-retry vs. 10-second readiness).
+ * These values are placeholders; the firmware/driver policy owner must
+ * resolve L-C03 before these constants enter production.  [ON_HOLD:L-C03]
+ * ----------------------------------------------------------------------- */
+#define IDPF_HARD_RESET_TIMEOUT_MSEC    (120 * 1000)   /* [ON_HOLD:L-C03] */
+#define IDPF_CORER_TIMEOUT_MSEC         (120 * 1000)   /* [ON_HOLD:L-C03] */
+#define IDPF_RESET_POLL_COUNT           (2 * 1000)
 
-#define iidc_rdma_core_auxiliary_drv iidc_auxiliary_drv
-#define iidc_rdma_core_dev_info iidc_core_dev_info
-#define iidc_rdma_core_auxiliary_dev iidc_auxiliary_dev
-#define iidc_rdma_reset_type iidc_reset_type
-#define iidc_rdma_event iidc_event
+/* -----------------------------------------------------------------------
+ * Miscellaneous constants
+ * ----------------------------------------------------------------------- */
+#define IDPF_NO_FREE_SLOT               0xffff
+#define IDPF_RSTAT_COMPLETE             0x01
+#define IDPF_DIM_PROFILE_SLOTS          5
 
-#define iidc_rdma_event_type iidc_event_type
-#define IIDC_RDMA_EVENT_WARN_RESET IIDC_EVENT_WARN_RESET
+/* Virtchnl2 version negotiated by this driver  [IDPF:A13-A14] */
+#define IDPF_VIRTCHNL_VERSION_MAJOR     VIRTCHNL2_VERSION_MAJOR_2
+#define IDPF_VIRTCHNL_VERSION_MINOR     VIRTCHNL2_VERSION_MINOR_0
 
-#define IIDC_RDMA_EVENT_BEFORE_MTU_CHANGE IIDC_EVENT_BEFORE_MTU_CHANGE
-#define IIDC_RDMA_EVENT_AFTER_MTU_CHANGE IIDC_EVENT_AFTER_MTU_CHANGE
+/* BAR region size constants  [IDPF:A13] */
+#define IDPF_MMIO_REG_NUM_STATIC        2
+#define IDPF_PF_MBX_REGION_SZ          4096
+#define IDPF_PF_RSTAT_REGION_SZ         2048
+#define IDPF_VF_MBX_REGION_SZ          10240
+#define IDPF_VF_RSTAT_REGION_SZ         2048
+#define IDPF_SIOV_MBX_REGION_SZ         4096
+#define IDPF_SIOV_RSTAT_REGION_SZ       2048
 
-#include "iidc_rdma_idpf.h"
+/* -----------------------------------------------------------------------
+ * Capability-check macros  [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
+#define idpf_is_cap_ena(adapter, field, flag) \
+        idpf_is_capability_ena(adapter, false, field, flag)
+#define idpf_is_cap_ena_all(adapter, field, flag) \
+        idpf_is_capability_ena(adapter, true, field, flag)
 
-#define GETMAXVAL(num_bits)		GENMASK((num_bits) - 1, 0)
+/* -----------------------------------------------------------------------
+ * RSS capability bitmask composites  [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
+#define IDPF_CAP_RSS ( \
+        VIRTCHNL2_FLOW_IPV4_TCP         | \
+        VIRTCHNL2_FLOW_IPV4_UDP         | \
+        VIRTCHNL2_FLOW_IPV4_SCTP        | \
+        VIRTCHNL2_FLOW_IPV4_OTHER       | \
+        VIRTCHNL2_FLOW_IPV6_TCP         | \
+        VIRTCHNL2_FLOW_IPV6_UDP         | \
+        VIRTCHNL2_FLOW_IPV6_SCTP        | \
+        VIRTCHNL2_FLOW_IPV6_OTHER)
 
-#define IDPF_NO_FREE_SLOT		0xffff
+#define IDPF_CAP_RSC ( \
+        VIRTCHNL2_CAP_RSC_IPV4_TCP      | \
+        VIRTCHNL2_CAP_RSC_IPV6_TCP)
 
-/* Default Mailbox settings */
-#define IDPF_CTLQ_MAX_BUF_LEN		SZ_4K
-#define IDPF_NUM_FILTERS_PER_MSG	20
-#define IDPF_NUM_DFLT_MBX_Q		2	/* includes both TX and RX */
-#define IDPF_DFLT_MBX_Q_LEN		64
-#define IDPF_DFLT_MBX_ID		-1
-/* maximum number of times to try before resetting mailbox */
-#define IDPF_MB_MAX_ERR			20
-#define IDPF_NUM_CHUNKS_PER_MSG(struct_sz, chunk_sz)   \
-	((IDPF_CTLQ_MAX_BUF_LEN - (struct_sz)) / (chunk_sz))
+#define IDPF_CAP_HSPLIT ( \
+        VIRTCHNL2_CAP_RX_HSPLIT_AT_L4V4 | \
+        VIRTCHNL2_CAP_RX_HSPLIT_AT_L4V6)
 
-#define IDPF_HARD_RESET_TIMEOUT_MSEC	(120 * 1000)
-#define IDPF_CORER_TIMEOUT_MSEC		(120 * 1000)
-#define IDPF_RESET_POLL_COUNT		(2 * 1000)
+#define IDPF_CAP_TX_CSUM_L4V4 ( \
+        VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_TCP | \
+        VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_UDP)
 
-/* available message levels */
-#define IDPF_AVAIL_NETIF_M (NETIF_MSG_DRV | NETIF_MSG_PROBE | NETIF_MSG_LINK)
+#define IDPF_CAP_TX_CSUM_L4V6 ( \
+        VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_TCP | \
+        VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_UDP)
 
-#define IDPF_RSTAT_COMPLETE		0x01
+#define IDPF_CAP_RX_CSUM ( \
+        VIRTCHNL2_CAP_RX_CSUM_L3_IPV4          | \
+        VIRTCHNL2_CAP_RX_CSUM_L4_IPV4_TCP      | \
+        VIRTCHNL2_CAP_RX_CSUM_L4_IPV4_UDP      | \
+        VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_TCP      | \
+        VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_UDP)
 
-#define IDPF_DIM_PROFILE_SLOTS	5
+#define IDPF_CAP_TX_SCTP_CSUM ( \
+        VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_SCTP | \
+        VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_SCTP)
 
-#define IDPF_VIRTCHNL_VERSION_MAJOR VIRTCHNL2_VERSION_MAJOR_2
-#define IDPF_VIRTCHNL_VERSION_MINOR VIRTCHNL2_VERSION_MINOR_0
+#define IDPF_CAP_TUNNEL_TX_CSUM ( \
+        VIRTCHNL2_CAP_TX_CSUM_L3_SINGLE_TUNNEL | \
+        VIRTCHNL2_CAP_TX_CSUM_L4_SINGLE_TUNNEL)
 
-/**
+/* -----------------------------------------------------------------------
+ * Device-simulation detection macros.
+ *
+ * IS_EMR_DEVICE / IS_SIMICS_DEVICE are referenced by the timeout helpers
+ * below and come from idpf_devids.h, included above.
+ * ----------------------------------------------------------------------- */
+
+/* -----------------------------------------------------------------------
  * struct idpf_mac_filter
- * @list: list member field
- * @macaddr: MAC address
- * @remove: filter should be removed (virtchnl)
- * @add: filter should be added (virtchnl)
- */
+ *
+ * Per-MAC-address filter entry.  list_head replaced by TAILQ_ENTRY.
+ * [FBSD15:A30] [LOCAL:A20]
+ * ----------------------------------------------------------------------- */
 struct idpf_mac_filter {
-	struct list_head list;
-	u8 macaddr[ETH_ALEN];
-	bool remove;
-	bool add;
+        TAILQ_ENTRY(idpf_mac_filter) list;
+        uint8_t  macaddr[ETHER_ADDR_LEN];
+        bool     remove;
+        bool     add;
 };
 
-/**
- * enum idpf_state - State machine to handle bring up
- * @__IDPF_VER_CHECK: Negotiate virtchnl version
- * @__IDPF_GET_CAPS: Negotiate capabilities
- * @__IDPF_INIT_SW: Init based on given capabilities
- * @__IDPF_STATE_LAST: Must be last, used to determine size
- */
+/* -----------------------------------------------------------------------
+ * enum idpf_state — control-plane bring-up state machine
+ * [IDPF:A13-A14] [LOCAL:A24]
+ * ----------------------------------------------------------------------- */
 enum idpf_state {
-	__IDPF_VER_CHECK,
-	__IDPF_GET_CAPS,
-	__IDPF_INIT_SW,
-	__IDPF_STATE_LAST,
+        __IDPF_VER_CHECK,
+        __IDPF_GET_CAPS,
+        __IDPF_INIT_SW,
+        __IDPF_STATE_LAST,
 };
 
-/**
- * enum idpf_flags - Hard reset causes.
- * @IDPF_HR_FUNC_RESET: Hard reset when TxRx timeout
- * @IDPF_HR_DRV_LOAD: Set on driver load for a clean HW
- * @IDPF_HR_RESET_IN_PROG: Reset in progress
- * @IDPF_REMOVE_IN_PROG: Driver remove in progress
- * @IDPF_MB_INTR_MODE: Mailbox in interrupt mode
- * @IDPF_VC_CORE_INIT: virtchnl core has been init
- * @IDPF_CORER_IN_PROG: CORER is in progress
- * @IDPF_PCI_CB_RESET: Reset via the PCI callbacks
- * @IDPF_FLAGS_NBITS: Must be last
- */
+/* -----------------------------------------------------------------------
+ * enum idpf_flags — adapter-level flags stored in adapter->flags (uint32_t).
+ *
+ * Linux DECLARE_BITMAP replaced by plain uint32_t bit positions.
+ * Use (adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) etc.
+ * [FBSD15:A32] [LOCAL:A21]
+ * ----------------------------------------------------------------------- */
 enum idpf_flags {
-	IDPF_HR_FUNC_RESET,
-	IDPF_HR_DRV_LOAD,
-	IDPF_HR_RESET_IN_PROG,
-	IDPF_REMOVE_IN_PROG,
-	IDPF_MB_INTR_MODE,
-	IDPF_VC_CORE_INIT,
-	IDPF_CORER_IN_PROG,
-	IDPF_PCI_CB_RESET,
-	IDPF_FLAGS_NBITS,
+        IDPF_HR_FUNC_RESET,
+        IDPF_HR_DRV_LOAD,
+        IDPF_HR_RESET_IN_PROG,
+        IDPF_REMOVE_IN_PROG,
+        IDPF_MB_INTR_MODE,
+        IDPF_VC_CORE_INIT,
+        IDPF_CORER_IN_PROG,
+        IDPF_PCI_CB_RESET,
+        IDPF_FLAGS_NBITS,       /* must be last; must fit in uint32_t */
 };
 
-/**
- * enum idpf_cap_field - Offsets into capabilities struct for specific caps
- * @IDPF_BASE_CAPS: generic base capabilities
- * @IDPF_CSUM_CAPS: checksum offload capabilities
- * @IDPF_SEG_CAPS: segmentation offload capabilities
- * @IDPF_RSS_CAPS: RSS offload capabilities
- * @IDPF_HSPLIT_CAPS: Header split capabilities
- * @IDPF_RSC_CAPS: RSC offload capabilities
- * @IDPF_OTHER_CAPS: miscellaneous offloads
- *
- * Used when checking for a specific capability flag since different capability
- * sets are not mutually exclusive numerically, the caller must specify which
- * type of capability they are checking for.
- */
+_Static_assert(IDPF_FLAGS_NBITS <= 32,
+    "idpf_flags exceeds uint32_t width");
+
+/* -----------------------------------------------------------------------
+ * enum idpf_cap_field — offsets into virtchnl2_get_capabilities
+ * [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
 enum idpf_cap_field {
-	IDPF_BASE_CAPS		= -1,
-	IDPF_CSUM_CAPS		= offsetof(struct virtchnl2_get_capabilities,
-					   csum_caps),
-	IDPF_SEG_CAPS		= offsetof(struct virtchnl2_get_capabilities,
-					   seg_caps),
-	IDPF_RSS_CAPS		= offsetof(struct virtchnl2_get_capabilities,
-					   rss_caps),
-	IDPF_HSPLIT_CAPS	= offsetof(struct virtchnl2_get_capabilities,
-					   hsplit_caps),
-	IDPF_RSC_CAPS		= offsetof(struct virtchnl2_get_capabilities,
-					   rsc_caps),
-	IDPF_OTHER_CAPS		= offsetof(struct virtchnl2_get_capabilities,
-					   other_caps),
+        IDPF_BASE_CAPS   = -1,
+        IDPF_CSUM_CAPS   = offsetof(struct virtchnl2_get_capabilities,
+                                    csum_caps),
+        IDPF_SEG_CAPS    = offsetof(struct virtchnl2_get_capabilities,
+                                    seg_caps),
+        IDPF_RSS_CAPS    = offsetof(struct virtchnl2_get_capabilities,
+                                    rss_caps),
+        IDPF_HSPLIT_CAPS = offsetof(struct virtchnl2_get_capabilities,
+                                    hsplit_caps),
+        IDPF_RSC_CAPS    = offsetof(struct virtchnl2_get_capabilities,
+                                    rsc_caps),
+        IDPF_OTHER_CAPS  = offsetof(struct virtchnl2_get_capabilities,
+                                    other_caps),
 };
 
-/**
- * enum idpf_vport_state - Current vport state
- * @IDPF_VPORT_UP: Vport is up
- * @IDPF_VPORT_STATE_NBITS: Must be last, number of states
- */
+/* -----------------------------------------------------------------------
+ * enum idpf_vport_state — per-vport state bits stored in vport->state
+ * (uint32_t, same pattern as adapter->flags).
+ * [LOCAL:A20]
+ * ----------------------------------------------------------------------- */
 enum idpf_vport_state {
-	IDPF_VPORT_UP,
-	IDPF_VPORT_STATE_NBITS
- };
+        IDPF_VPORT_UP,
+        IDPF_VPORT_STATE_NBITS,
+};
 
-/**
- * struct idpf_netdev_priv - Struct to store vport back pointer
- * @adapter: Adapter back pointer
- * @vport: Vport back pointer
- * @vport_id: Vport identifier
- * @link_speed_mbps: Link speed in mbps
- * @vport_idx: Relative vport index
-#ifdef HAVE_NDO_FEATURES_CHECK
- * @max_tx_hdr_size: Max header length hardware can support
-#endif
- * @state: See enum idpf_vport_state
- * @tx_max_bufs: Max buffers that can be transmitted with scatter-gather
- * @stats_lock: Lock to protect stats update
- * @netstats: Packet and byte stats
- */
+_Static_assert(IDPF_VPORT_STATE_NBITS <= 32,
+    "idpf_vport_state exceeds uint32_t width");
+
+/* -----------------------------------------------------------------------
+ * struct idpf_netdev_priv — per-vport back-pointer stored in iflib ctx.
+ *
+ * net_device removed; FreeBSD uses if_ctx_t / struct ifnet *.
+ * spinlock_t replaced by struct mtx.
+ * rtnl_link_stats64 replaced by struct if_data (FreeBSD per-interface stats).
+ * DECLARE_BITMAP replaced by uint32_t.
+ * [FBSD15:A30] [FBSD15:A32] [LOCAL:A20-A21]
+ * ----------------------------------------------------------------------- */
 struct idpf_netdev_priv {
-	struct idpf_adapter *adapter;
-	struct idpf_vport *vport;
-	u32 vport_id;
-	u32 link_speed_mbps;
-	u16 vport_idx;
-#ifdef HAVE_NDO_FEATURES_CHECK
-	u16 max_tx_hdr_size;
-#endif /* HAVE_NDO_FEATURES_CHECK */
-	DECLARE_BITMAP(state, IDPF_VPORT_STATE_NBITS);
-	u16 tx_max_bufs;
-	spinlock_t stats_lock;
-	struct rtnl_link_stats64 netstats;
+        struct idpf_adapter     *adapter;
+        struct idpf_vport       *vport;
+        uint32_t                 vport_id;
+        uint32_t                 link_speed_mbps;
+        uint16_t                 vport_idx;
+        uint32_t                 state;         /* idpf_vport_state bits */
+        uint16_t                 tx_max_bufs;
+        struct mtx               stats_lock;    /* protects netstats */
+        struct if_data           netstats;      /* [FBSD15:A30] */
 };
 
-/**
- * struct idpf_reset_reg - Reset register offsets/masks
- * @rstat: Reset status register
- * @oicr_cause: OICR cause register
- * @rstat_m: Reset status mask
- * @oicr_cause_m: OICR cause mask
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_reset_reg — reset and OICR register descriptors.
+ *
+ * void __iomem * replaced by void * (bus_space accessor model; raw pointer
+ * is only valid while the BAR resource is mapped).  [FBSD15:A31]
+ * ----------------------------------------------------------------------- */
 struct idpf_reset_reg {
-	void __iomem *rstat;
-	void __iomem *oicr_cause;
-	u32 rstat_m;
-	u32 oicr_cause_m;
+        void    *rstat;         /* mapped reset-status register address */
+        void    *oicr_cause;    /* mapped OICR cause register address */
+        uint32_t rstat_m;
+        uint32_t oicr_cause_m;
 };
 
-/**
- * struct idpf_vport_max_q - Queue limits
- * @max_rxq: Maximum number of RX queues supported
- * @max_txq: Maixmum number of TX queues supported
- * @max_bufq: In splitq, maximum number of buffer queues supported
- * @max_complq: In splitq, maximum number of completion queues supported
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_vport_max_q — queue count limits per vport  [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
 struct idpf_vport_max_q {
-	u16 max_rxq;
-	u16 max_txq;
-	u16 max_bufq;
-	u16 max_complq;
+        uint16_t max_rxq;
+        uint16_t max_txq;
+        uint16_t max_bufq;
+        uint16_t max_complq;
 };
 
-/**
- * struct idpf_reg_ops - Device specific register operation function pointers
- * @ctlq_reg_init: Mailbox control queue register initialization
- * @intr_reg_init: Traffic interrupt register initialization
- * @mb_intr_reg_init: Mailbox interrupt register initialization
- * @reset_reg_init: Reset register initialization
- * @trigger_reset: Trigger a reset to occur
- * @read_master_time: Read master time
- * @ptp_reg_init: PTP register initialization
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_reg_ops — device-specific register operation callbacks.
+ *
+ * ptp_reg_init and read_master_time are CONDITIONAL (feature 217).
+ * They are retained as nullable function pointers; callers must check
+ * for NULL before invoking.  [IDPF:A13-A14] [PROPOSED:A38]
+ * ----------------------------------------------------------------------- */
 struct idpf_reg_ops {
-	void (*ctlq_reg_init)(struct idpf_adapter *adapter,
-			      struct idpf_ctlq_create_info *cq);
-	int (*intr_reg_init)(struct idpf_vport *vport,
-			     struct idpf_q_vec_rsrc *rsrc);
-	void (*mb_intr_reg_init)(struct idpf_adapter *adapter);
-	void (*reset_reg_init)(struct idpf_adapter *adapter);
-	void (*oicr_reset_reg_init)(struct idpf_adapter *adapter);
-	void (*trigger_reset)(struct idpf_adapter *adapter,
-			      enum idpf_flags trig_cause);
-	u64 (*read_master_time)(const struct idpf_hw *hw);
-	void (*ptp_reg_init)(const struct idpf_adapter *adapter);
+        void (*ctlq_reg_init)(struct idpf_adapter *adapter,
+                              struct idpf_ctlq_create_info *cq);
+        int  (*intr_reg_init)(struct idpf_vport *vport,
+                              struct idpf_q_vec_rsrc *rsrc);
+        void (*mb_intr_reg_init)(struct idpf_adapter *adapter);
+        void (*reset_reg_init)(struct idpf_adapter *adapter);
+        void (*oicr_reset_reg_init)(struct idpf_adapter *adapter);
+        void (*trigger_reset)(struct idpf_adapter *adapter,
+                              enum idpf_flags trig_cause);
+        /*
+         * read_master_time / ptp_reg_init: CONDITIONAL (feature 217).
+         * May be NULL when PTP is not negotiated.  [ON_HOLD — see §23.4]
+         */
+        uint64_t (*read_master_time)(const struct idpf_hw *hw);
+        void     (*ptp_reg_init)(const struct idpf_adapter *adapter);
 };
 
-#define IDPF_MMIO_REG_NUM_STATIC	2
-#define IDPF_PF_MBX_REGION_SZ		4096
-#define IDPF_PF_RSTAT_REGION_SZ		2048
-#define IDPF_VF_MBX_REGION_SZ		10240
-#define IDPF_VF_RSTAT_REGION_SZ		2048
-#define IDPF_SIOV_MBX_REGION_SZ		4096
-#define IDPF_SIOV_RSTAT_REGION_SZ	2048
-
-/**
- * struct idpf_dev_ops - Device specific operations
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
- * vdcm_init: VDCM initialization
- * vdcm_deinit: VDCM deinitialization
-#endif
- * notify_adi_reset: Notify ADI reset
- * @reg_ops: Register operations
- * idc_init: IDC initialization
- * @static_reg_info: array of mailbox and rstat register info
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_dev_ops — device-specific operations.
+ *
+ * vdcm_init / vdcm_deinit (VFIO/MDEV) removed — Linux-only.
+ * idc_init removed — IDC/IIDC is DELEGATED.
+ * notify_adi_reset retained: ADI lifecycle is CONDITIONAL but the
+ * callback pointer is part of the shared device-ops table.
+ * static_reg_info uses struct resource * (FreeBSD BAR resource handle).
+ * [FBSD15:A30] [LOCAL:A22] [IDPF:A13]
+ * ----------------------------------------------------------------------- */
 struct idpf_dev_ops {
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
-	int (*vdcm_init)(struct pci_dev *pdev);
-	void (*vdcm_deinit)(struct pci_dev *pdev);
-#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
-	void (*notify_adi_reset)(struct idpf_adapter *adapter,
-				 u16 adi_id, bool reset);
-	struct idpf_reg_ops reg_ops;
-	int (*idc_init)(struct idpf_adapter *adapter);
+        /*
+         * notify_adi_reset: CONDITIONAL (feature 084).
+         * May be NULL when ADI is not negotiated.
+         */
+        void (*notify_adi_reset)(struct idpf_adapter *adapter,
+                                 uint16_t adi_id, bool reset);
 
-	/* static_reg_info[0] is mailbox region, static_reg_info[1] is rstat */
-	struct resource static_reg_info[IDPF_MMIO_REG_NUM_STATIC];
+        struct idpf_reg_ops reg_ops;
+
+        /*
+         * static_reg_info[0]: the BAR0 memory resource.
+         *
+         * FreeBSD's resource manager will not hand out the same PCI BAR
+         * twice, so unlike Linux - which ioremaps the mailbox, rstat and LAN
+         * windows independently - the port maps BAR0 once during attach-pre
+         * and every region in struct idpf_hw records a vaddr computed as an
+         * offset into that single mapping.  static_reg_info[1] is reserved.
+         * Released during detach.
+         * [FBSD15:A30-A31] [IDPF:A13]
+         */
+        struct resource *static_reg_info[IDPF_MMIO_REG_NUM_STATIC];
 };
 
-/**
- * enum idpf_vport_reset_cause - Vport soft reset causes
- * @IDPF_SR_Q_CHANGE: Soft reset queue change
- * @IDPF_SR_Q_DESC_CHANGE: Soft reset descriptor change
- * @IDPF_SR_Q_SCH_CHANGE: Scheduling mode change in queue context
- * @IDPF_SR_MTU_CHANGE: Soft reset MTU change
- * @IDPF_SR_RSC_CHANGE: Soft reset RSC change
- * @IDPF_SR_HSPLIT_CHANGE: Soft reset header split change
-#ifdef HAVE_XDP_SUPPORT
- * @IDPF_SR_XDP_CHANGE: XDP soft reset
-#endif
- */
+/* -----------------------------------------------------------------------
+ * enum idpf_vport_reset_cause — soft-reset trigger reasons
+ * XDP cause removed (XDP not in scope).  [LOCAL:A18]
+ * ----------------------------------------------------------------------- */
 enum idpf_vport_reset_cause {
-	IDPF_SR_Q_CHANGE,
-	IDPF_SR_Q_DESC_CHANGE,
-	IDPF_SR_Q_SCH_CHANGE,
-	IDPF_SR_MTU_CHANGE,
-	IDPF_SR_RSC_CHANGE,
-	IDPF_SR_HSPLIT_CHANGE,
-#ifdef HAVE_XDP_SUPPORT
-	IDPF_SR_XDP_CHANGE,
-#endif /* HAVE_XDP_SUPPORT */
+        IDPF_SR_Q_CHANGE,
+        IDPF_SR_Q_DESC_CHANGE,
+        IDPF_SR_Q_SCH_CHANGE,
+        IDPF_SR_MTU_CHANGE,
+        IDPF_SR_RSC_CHANGE,
+        IDPF_SR_HSPLIT_CHANGE,
 };
 
-/**
- * enum idpf_vport_flags - vport flags
- * @IDPF_VPORT_DEL_QUEUES: To send delete queues message
- * @IDPF_VPORT_SW_MARKER: Indicate TX pipe drain software marker packets
- * 			  processing is done
- * @IDPF_VPORT_FLAGS_NBITS: Must be last
- */
+/* -----------------------------------------------------------------------
+ * enum idpf_vport_flags — per-vport flag bits (stored in vport->flags,
+ * uint32_t).  [LOCAL:A20]
+ * ----------------------------------------------------------------------- */
 enum idpf_vport_flags {
-	IDPF_VPORT_DEL_QUEUES,
-	IDPF_VPORT_SW_MARKER,
-	IDPF_VPORT_FLAGS_NBITS,
+        IDPF_VPORT_DEL_QUEUES,
+        IDPF_VPORT_SW_MARKER,
+        IDPF_VPORT_FLAGS_NBITS,
 };
 
-#ifdef HAVE_ETHTOOL_GET_TS_STATS
-/**
- * struct idpf_tstamp_stats - Tx timestamp statistics
- * @stats_sync: See struct u64_stats_sync
- * @packets: Number of packets successfully timestamped by the hardware
- * @discarded: Number of Tx skbs discarded due to cached PHC
- *	       being too old to correctly extend timestamp
- * @flushed: Number of Tx skbs flushed due to interface closed
- */
-struct idpf_tstamp_stats {
-	struct u64_stats_sync stats_sync;
-	u64_stats_t packets;
-	u64_stats_t discarded;
-	u64_stats_t flushed;
-};
-#endif /* HAVE_ETHTOOL_GET_TS_STATS */
+_Static_assert(IDPF_VPORT_FLAGS_NBITS <= 32,
+    "idpf_vport_flags exceeds uint32_t width");
 
-#ifdef IDPF_ADD_PROBES
-struct idpf_extra_stats {
-	u64_stats_t tx_tcp_segs;
-	u64_stats_t tx_udp_segs;
-	u64_stats_t tx_tcp_cso;
-	u64_stats_t tx_udp_cso;
-	u64_stats_t tx_sctp_cso;
-	u64_stats_t tx_ip4_cso;
-	u64_stats_t rx_tcp_cso;
-	u64_stats_t rx_udp_cso;
-	u64_stats_t rx_sctp_cso;
-	u64_stats_t rx_ip4_cso;
-	u64_stats_t rx_tcp_cso_err;
-	u64_stats_t rx_udp_cso_err;
-	u64_stats_t rx_sctp_cso_err;
-	u64_stats_t rx_ip4_cso_err;
-	u64_stats_t rx_csum_complete;
-	u64_stats_t rx_csum_unnecessary;
-};
-
-#endif /* IDPF_ADD_PROBES */
+/* -----------------------------------------------------------------------
+ * struct idpf_port_stats — per-vport statistics.
+ *
+ * u64_stats_sync removed (Linux-only); counters are plain uint64_t.
+ * A single stats_lock (struct mtx) protects the entire struct.
+ * CONFIG_UPLINK_PORT_STATS and IDPF_ADD_PROBES blocks removed.
+ * [FBSD15:A32] [LOCAL:A20]
+ * ----------------------------------------------------------------------- */
 struct idpf_port_stats {
-	struct u64_stats_sync stats_sync;
-	u64_stats_t rx_hw_csum_err;
-	u64_stats_t rx_hsplit;
-	u64_stats_t rx_hsplit_hbo;
-	u64_stats_t rx_bad_descs;
-	u64_stats_t tx_linearize;
-	u64_stats_t tx_busy;
-	u64_stats_t tx_drops;
-	u64_stats_t tx_dma_map_errs;
-	u64_stats_t tx_reinjection_timeouts;
-	struct virtchnl2_vport_stats vport_stats;
-#ifdef CONFIG_UPLINK_PORT_STATS
-	struct virtchnl2_phy_port_stats *phy_port_stats;
-#endif /* CONFIG_UPLINK_PORT_STATS */
-#ifdef IDPF_ADD_PROBES
-	struct idpf_extra_stats extra_stats;
-#endif /* IDPF_ADD_PROBES */
-	u64_stats_t tx_lso_pkts;
-	u64_stats_t tx_lso_bytes;
-	u64_stats_t tx_lso_segs_tot;
-	u64_stats_t rx_page_recycles;
-	u64_stats_t rx_page_reallocs;
-	u64_stats_t rx_rsc_pkts;
-	u64_stats_t rx_rsc_bytes;
-	u64_stats_t rx_rsc_segs_tot;
-	u64_stats_t lso_seg[IDPF_MAX_SEGS];
-	u64_stats_t rsc_seg[IDPF_MAX_SEGS];
+        struct mtx                      stats_lock;     /* [FBSD15:A32] */
+        uint64_t                        rx_hw_csum_err;
+        uint64_t                        rx_hsplit;
+        uint64_t                        rx_hsplit_hbo;
+        uint64_t                        rx_bad_descs;
+        uint64_t                        tx_linearize;
+        uint64_t                        tx_busy;
+        uint64_t                        tx_drops;
+        uint64_t                        tx_dma_map_errs;
+        uint64_t                        tx_reinjection_timeouts;
+        struct virtchnl2_vport_stats    vport_stats;    /* [IDPF:A13-A14] */
+        uint64_t                        tx_lso_pkts;
+        uint64_t                        tx_lso_bytes;
+        uint64_t                        tx_lso_segs_tot;
+        uint64_t                        rx_page_recycles;
+        uint64_t                        rx_page_reallocs;
+        uint64_t                        rx_rsc_pkts;
+        uint64_t                        rx_rsc_bytes;
+        uint64_t                        rx_rsc_segs_tot;
+        uint64_t                        lso_seg[IDPF_MAX_SEGS];
+        uint64_t                        rsc_seg[IDPF_MAX_SEGS];
 };
 
-/**
- * struct idpf_q_vec_rsrc - handle for queue and vector resources
- * @dev: device pointer for DMA mapping
- * @q_vectors: array of queue vectors
- * @q_vector_idxs: starting index of queue vectors
- * @num_q_vectors: number of IRQ vectors allocated
- * @txq_grps: array of TX queue groups
- * @txq_desc_count: TX queue descriptor count
- * @complq_desc_count: completion queue descriptor count
- * @txq_model: split queue or single queue queuing model
- * @num_txq: number of allocated TX queues
- * @num_complq: number of allocated completion queues
- * @num_txq_grp: number of TX queue groups
- * @num_rxq_grp: number of RX queues in a group
- * @rxq_model: splitq queue or single queue queuing model
- * @rxq_grps: total number of RX groups. Number of groups * number of RX per
- *            group will yield total number of RX queues.
- * @num_rxq: number of allocated RX queues
- * @num_bufq: number of allocated buffer queues
- * @rxq_desc_count: RX queue descriptor count. *MUST* have enough descriptors
- *                  to complete all buffer descriptors for all buffer queues in
- *                  the worst case.
- * @bufq_desc_count: buffer queue descriptor count
- * @num_bufqs_per_qgrp: buffer queues per RX queue in a given grouping
- * @base_rxd: true if the driver should use base descriptors instead of flex
- * @bufq_size: size of buffers in ring (e.g. 2K, 4K, etc)
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_q_vec_rsrc — queue and vector resource bundle.
+ *
+ * struct device * replaced by device_t (FreeBSD newbus device handle).
+ * [FBSD15:A30] [LOCAL:A21]
+ * ----------------------------------------------------------------------- */
 struct idpf_q_vec_rsrc {
-	struct device		*dev;
-	struct idpf_q_vector	*q_vectors;
-	u16			*q_vector_idxs;
-	u16			num_q_vectors;
+        device_t                 dev;           /* [FBSD15:A30] */
+        struct idpf_q_vector    *q_vectors;
+        uint16_t                *q_vector_idxs;
+        uint16_t                 num_q_vectors;
 
-	struct idpf_txq_group	*txq_grps;
-	u32			txq_desc_count;
-	u32			complq_desc_count;
-	u32			txq_model;
-	u16			num_txq;
-	u16			num_complq;
-	u16			num_txq_grp;
+        struct idpf_txq_group   *txq_grps;
+        uint32_t                 txq_desc_count;
+        uint32_t                 complq_desc_count;
+        uint32_t                 txq_model;
+        uint16_t                 num_txq;
+        uint16_t                 num_complq;
+        uint16_t                 num_txq_grp;
 
-	u16			num_rxq_grp;
-	u32			rxq_model;
-	struct idpf_rxq_group	*rxq_grps;
-	u16			num_rxq;
-	u16			num_bufq;
-	u32			rxq_desc_count;
-	u32			bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ_GRP];
-	u8			num_bufqs_per_qgrp;
-	bool			base_rxd;
-	u32			bufq_size[IDPF_MAX_BUFQS_PER_RXQ_GRP];
-
+        uint16_t                 num_rxq_grp;
+        uint32_t                 rxq_model;
+        struct idpf_rxq_group   *rxq_grps;
+        uint16_t                 num_rxq;
+        uint16_t                 num_bufq;
+        uint32_t                 rxq_desc_count;
+        uint32_t                 bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ_GRP];
+        uint8_t                  num_bufqs_per_qgrp;
+        bool                     base_rxd;
+        uint32_t                 bufq_size[IDPF_MAX_BUFQS_PER_RXQ_GRP];
 };
 
+/* -----------------------------------------------------------------------
+ * struct idpf_fsteer_fltr — flow-steering filter entry.
+ *
+ * ethtool_rx_flow_spec removed (no ethtool in FreeBSD).
+ * Replaced by an opaque placeholder pending a FreeBSD flow-steering
+ * contract.  Feature 239 is CONDITIONAL.  [LOCAL:A18] [PROPOSED:A38]
+ * ----------------------------------------------------------------------- */
 struct idpf_fsteer_fltr {
-	struct list_head list;
-	struct ethtool_rx_flow_spec fs;
+        TAILQ_ENTRY(idpf_fsteer_fltr) list;
+        /*
+         * fs: flow-steering rule specification.
+         * TARGET DESIGN: replace with a FreeBSD-native flow rule struct
+         * once feature 239 (sideband flow steering) contract is approved.
+         * [CONDITIONAL — feature 239]
+         */
+        uint8_t  fs_opaque[64];         /* placeholder; do not decode */
 };
 
-/**
- * struct idpf_vport - Handle for netdevices and queue resources
- * @dflt_qv_rsrc: Default queue and vector resources
- * @txqs: Array to store the copy of TX queues for the fast path access
- * @num_txq: Number of allocated TX queues for fast path access
- * @tw_ts_gran_s: TX timing wheel granularity
- * @tw_horizon: TX timing wheel horizon
-#ifdef HAVE_XDP_SUPPORT
- * @num_xdp_txq: Number of XDP TX queues
- * @num_xdp_rxq: Number of XDP RX queues
- * @num_xdp_complq: Number of XDP completion queues
- * @xdp_txq_offset: XDP TX queue offset
- * @xdp_rxq_offset: XDP RX queue offset
- * @xdp_complq_offset: XDP completion queue offset
-#ifdef HAVE_NETDEV_BPF_XSK_POOL
- * @req_xsk_pool: Requested XSK pool
- * @xsk_enable_req: XSK enable request
-#endif
- * @xdp_prepare_tx_desc: Prepare XDP TX descriptor
-#endif
-#ifdef IDPF_ADD_PROBES
- * @ptype_stats: Ptype statistics
-#endif
- * @vdev_info: IDC vport device info pointer
- * @adapter: back pointer to associated adapter
- * @netdev: Associated net_device. Each vport should have one and only one
- *          associated netdev.
- * @flags: See enum idpf_vport_flags
- * @compln_clean_budget: Work budget for completion clean
- * @vport_id: Device given vport identifier
- * @vport_type: Default SRIOV, SIOV, etc.
- * @idx: Software index in adapter vports struct
- * @max_mtu: device given max possible MTU
- * @default_mac_addr: device will give a default MAC to use
- * @rx_itr_profile: RX profiles for Dynamic Interrupt Moderation
- * @tx_itr_profile: TX profiles for Dynamic Interrupt Moderation
- * @port_stats: per port csum, header split, and other offload stats
- * @default_vport: Use this vport if one isn't specified
- * @crc_enable: Enable CRC insertion offload
- * @link_up: True if link is up
- * @sw_marker_wq: Workqueue for marker packets
- * @tx_tstamp_caps: Capabilities negotiated for TX timestamping
- * @tstamp_config: The TX tstamp config
- * @tstamp_task: TX timestamping task
-#ifdef HAVE_ETHTOOL_GET_TS_STATS
- * @tstamp_stats: TX timestamping statistics
-#endif
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_vport — per-vport handle.
+ *
+ * XDP fields removed (XDP not in scope).
+ * IIDC/RDMA vdev_info removed (DELEGATED).
+ * net_device replaced by if_ctx_t (iflib context) and struct ifnet *.
+ * DECLARE_BITMAP replaced by uint32_t.
+ * wait_queue_head_t replaced by struct cv + struct mtx (sw_marker_cv /
+ *   sw_marker_lock) for the software-marker drain wait.
+ * hwtstamp_config / tstamp_task / tstamp_stats removed (PTP CONDITIONAL).
+ * tx_tstamp_caps retained as a nullable pointer (PTP CONDITIONAL).
+ * ptype_stats removed (IDPF_ADD_PROBES Linux-only).
+ * [FBSD15:A30] [LOCAL:A20-A25] [PROPOSED:A38]
+ * ----------------------------------------------------------------------- */
 struct idpf_vport {
-	struct idpf_q_vec_rsrc dflt_qv_rsrc;
-	struct idpf_queue **txqs;
-	u16 num_txq;
-	u16 tw_ts_gran_s;
-	u64 tw_horizon;
-#ifdef HAVE_XDP_SUPPORT
-	int num_xdp_txq;
-	int num_xdp_rxq;
-	int xdp_txq_offset;
-	int xdp_rxq_offset;
-#ifdef HAVE_NETDEV_BPF_XSK_POOL
-	struct xsk_buff_pool *req_xsk_pool;
-	bool xsk_enable_req;
-#endif
-	void (*xdp_prepare_tx_desc)(struct idpf_queue *xdpq, dma_addr_t dma,
-				    u16 idx, u32 size,
-				    struct idpf_tx_splitq_params *params);
-#endif /* HAVE_XDP_SUPPORT */
-#ifdef IDPF_ADD_PROBES
-	u64_stats_t ptype_stats[IDPF_RX_MAX_PTYPE];
-#endif /* IDPF_ADD_PROBES */
+        struct idpf_q_vec_rsrc   dflt_qv_rsrc;
+        struct idpf_queue      **txqs;          /* fast-path TX queue array */
+        uint16_t                 num_txq;
+        uint16_t                 tw_ts_gran_s;
+        uint64_t                 tw_horizon;
 
-	struct iidc_rdma_vport_dev_info *vdev_info;
+        struct idpf_adapter     *adapter;
 
-	struct idpf_adapter *adapter;
-	struct net_device *netdev;
-	DECLARE_BITMAP(flags, IDPF_VPORT_FLAGS_NBITS);
-	u32 compln_clean_budget;
-	u32 vport_id;
-	u16 vport_type;
-	u16 idx;
+        /*
+         * iflib integration:
+         *   ctx  — iflib software context (replaces struct net_device *).
+         *   ifp  — underlying ifnet pointer; obtained via iflib_get_ifp().
+         * [FBSD15:A30]
+         */
+        if_ctx_t                 ctx;
+        struct ifnet            *ifp;
 
-	u16 max_mtu;
-	u8 default_mac_addr[ETH_ALEN];
-	u16 rx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
-	u16 tx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
+        uint32_t                 flags;         /* idpf_vport_flags bits */
+        uint32_t                 compln_clean_budget;
+        uint32_t                 vport_id;
+        uint16_t                 vport_type;
+        uint16_t                 idx;
 
-	struct idpf_port_stats port_stats;
-	bool default_vport;
-	bool crc_enable;
-	bool link_up;
-	/* Everything below this will NOT be copied during soft reset */
-	wait_queue_head_t sw_marker_wq;
+        uint16_t                 max_mtu;
+        uint8_t                  default_mac_addr[ETHER_ADDR_LEN];
+        uint16_t                 rx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
+        uint16_t                 tx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
 
-	struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps;
-	struct hwtstamp_config tstamp_config;
-	struct work_struct tstamp_task;
-#ifdef HAVE_ETHTOOL_GET_TS_STATS
-	struct idpf_tstamp_stats tstamp_stats;
-#endif /* HAVE_ETHTOOL_GET_TS_STATS */
+        struct idpf_port_stats   port_stats;
+        bool                     default_vport;
+        bool                     crc_enable;
+        bool                     link_up;
+
+        /*
+         * Software-marker drain wait.
+         * Linux wait_queue_head_t replaced by condvar + mutex pair.
+         * [FBSD15:A32-A33]
+         */
+        struct mtx               sw_marker_lock;
+        struct cv                sw_marker_cv;
+
+        /*
+         * tx_tstamp_caps: CONDITIONAL (feature 253 — TX completion
+         * timestamps).  NULL when not negotiated.  [ON_HOLD — see §21.8]
+         */
+        struct idpf_ptp_vport_tx_tstamp_caps *tx_tstamp_caps;
 };
 
-/**
- * enum idpf_user_flags
- * @__IDPF_PRIV_FLAGS_HDR_SPLIT: Private flag to toggle header split
- * @__IDPF_USER_FLAG_HSPLIT: header split state
- * @__IDPF_PROMISC_UC: Unicast promiscuous mode
- * @__IDPF_PROMISC_MC: Multicast promiscuous mode
- * @__IDPF_USER_FLAGS_NBITS: Must be last
- */
+/* -----------------------------------------------------------------------
+ * enum idpf_user_flags — user-visible configuration flags.
+ * Stored in idpf_vport_user_config_data.user_flags (uint64_t bitmask).
+ * DECLARE_BITMAP replaced by uint64_t.  [LOCAL:A18]
+ * ----------------------------------------------------------------------- */
 enum idpf_user_flags {
-	__IDPF_PRIV_FLAGS_HDR_SPLIT = 0,
-	__IDPF_USER_FLAG_HSPLIT = 0U,
-	__IDPF_PROMISC_UC = 32,
-	__IDPF_PROMISC_MC,
-	__IDPF_USER_FLAGS_NBITS,
+        __IDPF_PRIV_FLAGS_HDR_SPLIT = 0,
+        __IDPF_USER_FLAG_HSPLIT     = 0,
+        __IDPF_PROMISC_UC           = 32,
+        __IDPF_PROMISC_MC,
+        __IDPF_USER_FLAGS_NBITS,
 };
 
-/**
- * struct idpf_rss_data - Associated RSS data
- * @rss_hash: RSS hash
- * @rss_key_size: Size of RSS hash key
- * @rss_key: RSS hash key
- * @rss_lut_size: Size of RSS lookup table
- * @rss_lut: RSS lookup table
- * @cached_lut: Used to restore previously init RSS lut
- */
+_Static_assert(__IDPF_USER_FLAGS_NBITS <= 64,
+    "idpf_user_flags exceeds uint64_t width");
+
+/* -----------------------------------------------------------------------
+ * struct idpf_rss_data — RSS key, LUT, and hash configuration.
+ * [IDPF:A13-A14] [LOCAL:A24]
+ * ----------------------------------------------------------------------- */
 struct idpf_rss_data {
-	u64 rss_hash;
-	u16 rss_key_size;
-	u8 *rss_key;
-	u16 rss_lut_size;
-	u32 *rss_lut;
-	u32 *cached_lut;
+        uint64_t  rss_hash;
+        uint16_t  rss_key_size;
+        uint8_t  *rss_key;
+        uint16_t  rss_lut_size;
+        uint32_t *rss_lut;
+        uint32_t *cached_lut;
 };
 
-/**
- * struct idpf_q_coalesce - User defined coalescing configuration values for
- *                        a single queue.
- * @tx_intr_mode: Dynamic TX ITR or not
- * @rx_intr_mode: Dynamic RX ITR or not
- * @tx_coalesce_usecs: TX interrupt throttling rate
- * @rx_coalesce_usecs: RX interrupt throttling rate
- *
- * Used to restore user coalescing configuration after a reset.
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_q_coalesce — per-queue interrupt coalescing configuration.
+ * Used to restore user settings after a reset.  [LOCAL:A18]
+ * ----------------------------------------------------------------------- */
 struct idpf_q_coalesce {
-	u32 tx_intr_mode;
-	u32 rx_intr_mode;
-	u32 tx_coalesce_usecs;
-	u32 rx_coalesce_usecs;
+        uint32_t tx_intr_mode;
+        uint32_t rx_intr_mode;
+        uint32_t tx_coalesce_usecs;
+        uint32_t rx_coalesce_usecs;
 };
 
-/**
- * struct idpf_vport_user_config_data - User defined configuration values for
- *                                      each vport.
- * @rss_data: See struct idpf_rss_data
- * @q_coalesce: Array of per queue coalescing data
- * @num_req_tx_qs: Number of user requested TX queues through ethtool
- * @num_req_rx_qs: Number of user requested RX queues through ethtool
- * @num_req_txq_desc: Number of user requested TX queue descriptors through
- *                    ethtool
- * @num_req_rxq_desc: Number of user requested RX queue descriptors through
- *                    ethtool
- * @user_flags: User toggled config flags
- * @mac_filter_list: List of MAC filters
- * @num_fsteer_fltrs: number of flow steering filters
- * @flow_steer_list: list of flow steering filters
+/* -----------------------------------------------------------------------
+ * struct idpf_vport_user_config_data — user-visible per-vport configuration.
  *
- * Used to restore configuration after a reset as the vport will get wiped.
- */
+ * XDP / AF_XDP fields removed (not in scope).
+ * ETF fields removed (Linux-only).
+ * DECLARE_BITMAP replaced by uint64_t bitmasks.
+ * list_head replaced by TAILQ_HEAD.
+ * [LOCAL:A18] [FBSD15:A30]
+ * ----------------------------------------------------------------------- */
 struct idpf_vport_user_config_data {
-	struct idpf_rss_data rss_data;
-	struct idpf_q_coalesce *q_coalesce;
-	u16 num_req_tx_qs;
-	u16 num_req_rx_qs;
-	u32 num_req_txq_desc;
-	u32 num_req_rxq_desc;
-#ifdef HAVE_XDP_SUPPORT
-	/* Duplicated in queue structure for performance reasons */
-	struct bpf_prog *xdp_prog;
-#ifdef HAVE_NETDEV_BPF_XSK_POOL
-	DECLARE_BITMAP(af_xdp_zc_qps, IDPF_LARGE_MAX_Q);
-#endif /* HAVE_NETDEV_BPF_XSK_POOL */
-#endif /* HAVE_XDP_SUPPORT */
-	DECLARE_BITMAP(user_flags, __IDPF_USER_FLAGS_NBITS);
-#ifdef HAVE_ETF_SUPPORT
-	DECLARE_BITMAP(etf_qenable, IDPF_LARGE_MAX_Q);
-#endif /* HAVE_ETF_SUPPORT */
-	struct list_head mac_filter_list;
-	u32 num_fsteer_fltrs;
-	struct list_head flow_steer_list;
+        struct idpf_rss_data     rss_data;
+        struct idpf_q_coalesce  *q_coalesce;
+        uint16_t                 num_req_tx_qs;
+        uint16_t                 num_req_rx_qs;
+        uint32_t                 num_req_txq_desc;
+        uint32_t                 num_req_rxq_desc;
+        uint64_t                 user_flags;    /* idpf_user_flags bits */
+        TAILQ_HEAD(idpf_mac_filter_head, idpf_mac_filter) mac_filter_list;
+        uint32_t                 num_fsteer_fltrs;
+        TAILQ_HEAD(idpf_fsteer_fltr_head, idpf_fsteer_fltr) flow_steer_list;
 };
 
-/**
- * enum idpf_vport_config_flags - vport config flags
- * @IDPF_VPORT_REG_NETDEV: Register netdev
- * @IDPF_VPORT_UP_REQUESTED:  Set if interface up is requested on core reset
- * @IDPF_VPORT_UPLINK_PORT: Set if vport is attached to uplink port
- * @IDPF_VPORT_CONFIG_FLAGS_NBITS: Must be last
- */
+/* -----------------------------------------------------------------------
+ * enum idpf_vport_config_flags — vport configuration flags.
+ * Stored in idpf_vport_config.flags (uint32_t).  [LOCAL:A18]
+ * ----------------------------------------------------------------------- */
 enum idpf_vport_config_flags {
-	IDPF_VPORT_REG_NETDEV,
-	IDPF_VPORT_UP_REQUESTED,
-	IDPF_VPORT_UPLINK_PORT,
-	IDPF_VPORT_CONFIG_FLAGS_NBITS,
+        IDPF_VPORT_REG_NETDEV,
+        IDPF_VPORT_UP_REQUESTED,
+        IDPF_VPORT_UPLINK_PORT,
+        IDPF_VPORT_CONFIG_FLAGS_NBITS,
 };
 
-/**
- * struct idpf_avail_queue_info
- * @avail_rxq: Available RX queues
- * @avail_txq: Available TX queues
- * @avail_bufq: Available buffer queues
- * @avail_complq: Available completion queues
- *
- * Maintain total queues available after allocating max queues to each vport.
- */
+_Static_assert(IDPF_VPORT_CONFIG_FLAGS_NBITS <= 32,
+    "idpf_vport_config_flags exceeds uint32_t width");
+
+/* -----------------------------------------------------------------------
+ * struct idpf_avail_queue_info — available queue counts after vport alloc.
+ * [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
 struct idpf_avail_queue_info {
-	u16 avail_rxq;
-	u16 avail_txq;
-	u16 avail_bufq;
-	u16 avail_complq;
+        uint16_t avail_rxq;
+        uint16_t avail_txq;
+        uint16_t avail_bufq;
+        uint16_t avail_complq;
 };
 
-/**
- * struct idpf_vector_info - Utility structure to pass function arguments as a
- *                           structure
- * @num_req_vecs: Vectors required based on the number of queues updated by the
- *                user via ethtool
- * @num_curr_vecs: Current number of vectors, must be >= @num_req_vecs
- * @index: Relative starting index for vectors
- * @default_vport: Vectors are for default vport
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_vector_info — utility struct for vector distribution.
+ * [LOCAL:A21]
+ * ----------------------------------------------------------------------- */
 struct idpf_vector_info {
-	u16 num_req_vecs;
-	u16 num_curr_vecs;
-	u16 index;
-	bool default_vport;
+        uint16_t num_req_vecs;
+        uint16_t num_curr_vecs;
+        uint16_t index;
+        bool     default_vport;
 };
 
-/**
- * struct idpf_vector_lifo - Stack to maintain vector indexes used for vector
- *                           distribution algorithm
- * @top: Points to stack top i.e. next available vector index
- * @base: Always points to start of the free pool
- * @size: Total size of the vector stack
- * @vec_idx: Array to store all the vector indexes
- *
- * Vector stack maintains all the relative vector indexes at the *adapter*
- * level. This stack is divided into 2 parts, first one is called as 'default
- * pool' and other one is called 'free pool'.  Vector distribution algorithm
- * gives priority to default vports in a way that at least IDPF_MIN_Q_VEC
- * vectors are allocated per default vport and the relative vector indexes for
- * those are maintained in default pool. Free pool contains all the unallocated
- * vector indexes which can be allocated on-demand basis.
- * Mailbox vector index is maintained in the default pool of the stack
- * and also the RDMA vectors.
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_vector_lifo — vector-index stack for distribution algorithm.
+ * [LOCAL:A21]
+ * ----------------------------------------------------------------------- */
 struct idpf_vector_lifo {
-	u16 top;
-	u16 base;
-	u16 size;
-	u16 *vec_idx;
+        uint16_t  top;
+        uint16_t  base;
+        uint16_t  size;
+        uint16_t *vec_idx;
 };
 
-#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
-struct idpf_vec_affinity_config {
-	cpumask_t affinity_mask;
-	struct irq_affinity_notify affinity_notify;
-};
-#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
-
-/**
- * struct idpf_queue_id_reg_chunk - individual queue ID and register chunk
- * @qtail_reg_start: queue tail register offset
- * @qtail_reg_spacing: queue tail register spacing
- * @type: queue type of the queues in the chunk
- * @start_queue_id: starting queue ID in the chunk
- * @num_queues: number of queues in the chunk
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_queue_id_reg_chunk — individual queue-ID / register chunk.
+ * [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
 struct idpf_queue_id_reg_chunk {
-	u64 qtail_reg_start;
-	u32 qtail_reg_spacing;
-	u32 type;
-	u32 start_queue_id;
-	u32 num_queues;
+        uint64_t qtail_reg_start;
+        uint32_t qtail_reg_spacing;
+        uint32_t type;
+        uint32_t start_queue_id;
+        uint32_t num_queues;
 };
 
-/**
- * struct idpf_queue_id_reg_info - queue ID and register chunk info received
- *                                  over the mailbox
- * @num_chunks: number of chunks
- * @queue_chunks: array of chunks
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_queue_id_reg_info — queue-ID / register chunk collection.
+ * [IDPF:A13-A14]
+ * ----------------------------------------------------------------------- */
 struct idpf_queue_id_reg_info {
-	u16 num_chunks;
-	struct idpf_queue_id_reg_chunk *queue_chunks;
+        uint16_t                       num_chunks;
+        struct idpf_queue_id_reg_chunk *queue_chunks;
 };
 
-/**
- * struct idpf_vport_config - Vport configuration data
- * @user_config: see struct idpf_vport_user_config_data
- * @max_q: Maximum possible queues
- * @qid_reg_info: Struct to store the queue ID and register info
- * @mac_filter_list_lock: Lock to protect mac filters
- * @flow_steer_list_lock: Lock to protect fsteer filters
- * @flags: See enum idpf_vport_config_flags
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_vport_config — per-vport configuration and resource record.
+ *
+ * idpf_vec_affinity_config removed (Linux cpumask / irq_affinity_notify).
+ * spinlock_t replaced by struct mtx.
+ * DECLARE_BITMAP replaced by uint32_t.
+ * [FBSD15:A32] [LOCAL:A18]
+ * ----------------------------------------------------------------------- */
 struct idpf_vport_config {
-	struct idpf_vport_user_config_data user_config;
-	struct idpf_vport_max_q max_q;
-#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
-#define MAX_NUM_VEC_AFFINTY	64
-	struct idpf_vec_affinity_config *affinity_config;
-#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
-	struct idpf_queue_id_reg_info qid_reg_info;
-	spinlock_t mac_filter_list_lock;
-	/* protects flow_steer_list */
-	spinlock_t flow_steer_list_lock;
-	DECLARE_BITMAP(flags, IDPF_VPORT_CONFIG_FLAGS_NBITS);
+        struct idpf_vport_user_config_data  user_config;
+        struct idpf_vport_max_q             max_q;
+        struct idpf_queue_id_reg_info       qid_reg_info;
+        struct mtx                          mac_filter_list_lock;
+        struct mtx                          flow_steer_list_lock;
+        uint32_t                            flags; /* idpf_vport_config_flags */
 };
 
+/* -----------------------------------------------------------------------
+ * Iteration helper
+ * ----------------------------------------------------------------------- */
 #define idpf_for_each_vport(adapter, i) \
-	for ((i) = 0; (i) < (adapter)->num_alloc_vports; (i)++)
+        for ((i) = 0; (i) < (adapter)->num_alloc_vports; (i)++)
 
-/**
- * struct idpf_adapter - Device data struct generated on probe
- * @pdev: PCI device struct given on probe
- * @virt_ver_maj: Virtchnl version major
- * @virt_ver_min: Virtchnl version minor
- * @msg_enable: Debug message level enabled
- * @mb_wait_count: Number of times mailbox was attempted initialization
- * @state: Init state machine
- * @flags: See enum idpf_flags
- * @reset_reg: See struct idpf_reset_reg
- * @hw: Device access data
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
- * @adi_info: ADI info
-#if defined(HAVE_MDEV_REGISTER_PARENT) && defined(ENABLE_ACC_PASID_WA)
- * @parent: MDEV parent
-#endif
-#endif
- * @num_avail_msix: Available number of MSIX vectors
- * @num_msix_entries: Number of entries in MSIX table
- * @msix_entries: MSIX table
- * @num_rdma_msix_entries: Available number of MSIX vectors for RDMA
- * @rdma_msix_entries: RDMA MSIX table
-#ifdef CONFIG_RCA_SUPPORT
- * @num_rca_msix_entries: Available number of MSIX vectors for RCA
- * @rca_msix_entries: RCA MSIX table
-#endif
- * @req_vec_chunks: Requested vector chunk data
- * @mb_vector: Mailbox vector data
- * @vector_stack: Stack to store the msix vector indexes
- * @irq_mb_handler: Handler for hard interrupt for mailbox
- * @tx_timeout_count: Number of TX timeouts that have occurred
- * @avail_queues: Device given queue limits
- * @vports: Array to store vports created by the driver
- * @netdevs: Associated Vport netdevs
- * @vport_params_recvd: Vport params received
- * @vport_ids: Array of device given vport identifiers
- * @singleq_pt_lkup: Lookup table for singleq RX ptypes
- * @splitq_pt_lkup: Lookup table for splitq RX ptypes
- * @vport_config: Vport config parameters
- * @max_vports: Maximum vports that can be allocated
- * @num_alloc_vports: Current number of vports allocated
- * @next_vport: Next free slot in pf->vport[] - 0-based!
- * @init_task: Initialization task
- * @init_wq: Workqueue for initialization task
- * @serv_task: Periodically recurring maintenance task
- * @serv_wq: Workqueue for service task
- * @mbx_task: Task to handle mailbox interrupts
- * @mbx_wq: Workqueue for mailbox responses
- * @vc_event_task: Task to handle out of band virtchnl event notifications
- * @vc_event_wq: Workqueue for virtchnl events
- * @stats_task: Periodic statistics retrieval task
- * @stats_wq: Workqueue for statistics task
- * @caps: Negotiated capabilities with device
- * @vlan_caps: Negotiated VLAN capabilities
- * @vcxn_mngr: Virtchnl transaction manager
- * @edt_caps: EDT capabilities
- * @dev_ops: See idpf_dev_ops
- * @cdev_info: IDC core device info pointer
- * @num_vfs: Number of allocated VFs through sysfs. PF does not directly talk
- *           to VFs but is used to initialize them
- * @req_tx_splitq: TX split or single queue model to request
- * @req_rx_splitq: RX split or single queue model to request
- * @crc_enable: Enable CRC insertion offload
- * @vport_ctrl_lock: Lock to protect the vport control flow
- * @vector_lock: Lock to protect vector distribution
- * @queue_lock: Lock to protect queue distribution
-#ifdef DEVLINK_ENABLED
- * @cleanup_task: Deferred execution of destroy
- * @sf_mutex: To control access to subfunction list
- * @sf_list: List of active and deleted subfunctions
- * @sf_id: Unique integer corresponding to a subfunc
- * @sf_cnt: Count of active subfunctions
-#endif
- * @ptp: Storage for PTP-related data
- * @tx_compl_tstamp_gran_s: Number of left bit shifts to convert Tx completion
- *			    descriptor timestamp in nanoseconds.
- * @corer_done: Used to track the completion of CORER
- */
+/* -----------------------------------------------------------------------
+ * struct idpf_adapter — top-level per-device context.
+ *
+ * struct pci_dev * replaced by device_t (FreeBSD newbus).
+ * struct net_device ** replaced by if_ctx_t * array (iflib contexts).
+ * struct msix_entry * replaced by struct resource ** (FreeBSD IRQ resources).
+ * RDMA / RCA msix fields removed (CONDITIONAL / DELEGATED).
+ * VDCM/MDEV surface removed; adi_info retained as a TAILQ registry because
+ *   dev_ops.notify_adi_reset still resolves ADIs by identifier.
+ * IDC cdev_info removed (DELEGATED).
+ * devlink sf_* fields removed (devlink Linux-only).
+ * struct mutex replaced by struct sx (sleepable, process context).
+ * struct delayed_work replaced by struct callout (periodic) or
+ *   struct task + struct taskqueue (deferred one-shot).
+ * struct workqueue_struct * replaced by struct taskqueue *.
+ * struct completion corer_done replaced by struct cv + struct mtx.
+ * OEM caps field removed (CONFIG_OEM_CAPS / CONFIG_P2P Linux-only).
+ * num_vfs removed (SR-IOV PF CONDITIONAL, not baseline VF-DPF).
+ * irq_mb_handler: Linux irqreturn_t replaced by driver_filter_t *.
+ * [FBSD15:A30-A34] [LOCAL:A20-A25] [PROPOSED:A38]
+ * ----------------------------------------------------------------------- */
 struct idpf_adapter {
-	struct pci_dev *pdev;
-	const char *drv_name;
-	const char *drv_ver;
-	u32 virt_ver_maj;
-	u32 virt_ver_min;
-	u32 msg_enable;
-	u32 mb_wait_count;
-	enum idpf_state state;
-	DECLARE_BITMAP(flags, IDPF_FLAGS_NBITS);
-	struct idpf_reset_reg reset_reg;
-	struct idpf_hw hw;
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
-	struct idpf_adi_info adi_info;
-#if defined(HAVE_MDEV_REGISTER_PARENT) && defined(ENABLE_ACC_PASID_WA)
-	struct mdev_parent parent;
-#endif /* HAVE_MDEV_REGISTER_PARENT && ENABLE_ACC_PASID_WA */
-#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
-	u16 num_avail_msix;
-	u16 num_msix_entries;
-	struct msix_entry *msix_entries;
-	u16 num_rdma_msix_entries;
-	struct msix_entry *rdma_msix_entries;
-#ifdef CONFIG_RCA_SUPPORT
-	u16 num_rca_msix_entries;
-	struct msix_entry *rca_msix_entries;
-#endif /* CONFIG_RCA_SUPPORT */
-	struct virtchnl2_alloc_vectors *req_vec_chunks;
-	struct idpf_q_vector mb_vector;
-	struct idpf_vector_lifo vector_stack;
-	irqreturn_t (*irq_mb_handler)(int irq, void *data);
+        /*
+         * dev: FreeBSD newbus device handle (replaces struct pci_dev *).
+         * [FBSD15:A30]
+         */
+        device_t                         dev;
 
-	u32 tx_timeout_count;
-	struct idpf_avail_queue_info avail_queues;
-	struct idpf_vport **vports;
-	struct net_device **netdevs;
-	struct virtchnl2_create_vport **vport_params_recvd;
-	u32 *vport_ids;
+        const char                      *drv_name;
+        const char                      *drv_ver;
 
-	struct idpf_rx_ptype_decoded *singleq_pt_lkup;
-	struct idpf_rx_ptype_decoded *splitq_pt_lkup;
+        uint32_t                         virt_ver_maj;
+        uint32_t                         virt_ver_min;
+        uint32_t                         mb_wait_count;
 
-	struct idpf_vport_config **vport_config;
-	u16 max_vports;
-	u16 num_alloc_vports;
-	u16 next_vport;
-	struct delayed_work init_task;
-	struct workqueue_struct *init_wq;
-	struct delayed_work serv_task;
-	struct workqueue_struct *serv_wq;
-	struct delayed_work mbx_task;
-	struct workqueue_struct *mbx_wq;
-	struct delayed_work vc_event_task;
-	struct workqueue_struct *vc_event_wq;
-	struct delayed_work stats_task;
-	struct workqueue_struct *stats_wq;
-	struct virtchnl2_get_capabilities caps;
-	struct virtchnl2_vlan_get_caps vlan_caps;
-	struct idpf_vc_xn_manager *vcxn_mngr;
+        enum idpf_state                  state;
 
-	struct virtchnl2_edt_caps edt_caps;
-#if defined(CONFIG_OEM_CAPS) || defined(CONFIG_P2P)
-	struct virtchnl2_oem_caps oem_caps;
-#endif /* CONFIG_OEM_CAPS || CONFIG_P2P */
-	struct idpf_dev_ops dev_ops;
-	struct iidc_rdma_core_dev_info *cdev_info;
-	int num_vfs;
-	bool req_tx_splitq;
-	bool req_rx_splitq;
-	bool crc_enable;
-	struct mutex vport_ctrl_lock;
-	struct mutex vector_lock;
-	struct mutex queue_lock;
-#ifdef DEVLINK_ENABLED
-	struct delayed_work cleanup_task;
-	struct mutex sf_mutex; /* To control access to sf_list */
-	struct list_head sf_list;
-	unsigned short sf_id;
-	unsigned short sf_cnt;
-#endif /* DEVLINK_ENABLED */
+        /*
+         * flags: adapter-level state bits (idpf_flags).
+         * Plain uint32_t replaces Linux DECLARE_BITMAP.
+         * Access: adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)
+         * [FBSD15:A32]
+         */
+        uint32_t                         flags;
 
-	struct idpf_ptp *ptp;
-	u32 tx_compl_tstamp_gran_s;
-	struct completion corer_done;
+        struct idpf_reset_reg            reset_reg;
+        struct idpf_hw                   hw;
+
+        /*
+         * MSI-X resources.
+         * struct msix_entry replaced by struct resource * array.
+         * num_avail_msix: vectors available for datapath use.
+         * num_msix_entries: total allocated (including mailbox vector).
+         * msix_entries: array of num_msix_entries IRQ resource pointers.
+         * [FBSD15:A34]
+         */
+        uint16_t                         num_avail_msix;
+        uint16_t                         num_msix_entries;
+        struct resource                **msix_entries;
+
+        struct idpf_adi_info             adi_info;
+
+        struct virtchnl2_alloc_vectors  *req_vec_chunks;
+        struct idpf_q_vector             mb_vector;
+        struct idpf_vector_lifo          vector_stack;
+
+        /*
+         * irq_mb_handler: mailbox hard-interrupt filter function.
+         * Linux irqreturn_t (*)(int, void *) replaced by FreeBSD
+         * driver_filter_t * (int (*)(void *)).  [FBSD15:A34]
+         */
+        driver_filter_t                 *irq_mb_handler;
+
+        /*
+         * mb_intr_tag: cookie from bus_setup_intr() for the mailbox vector,
+         * required to tear the handler down again.  [FBSD15:A34]
+         */
+        void                            *mb_intr_tag;
+
+        uint32_t                         tx_timeout_count;
+        struct idpf_avail_queue_info     avail_queues;
+
+        struct idpf_vport              **vports;
+
+        /*
+         * iflib_ctxs: per-vport iflib software contexts.
+         * Replaces struct net_device ** netdevs.  [FBSD15:A30]
+         */
+        if_ctx_t                        *iflib_ctxs;
+
+        struct virtchnl2_create_vport  **vport_params_recvd;
+        uint32_t                        *vport_ids;
+
+        struct idpf_rx_ptype_decoded    *singleq_pt_lkup;
+        struct idpf_rx_ptype_decoded    *splitq_pt_lkup;
+
+        struct idpf_vport_config       **vport_config;
+        uint16_t                         max_vports;
+        uint16_t                         num_alloc_vports;
+        uint16_t                         next_vport;
+
+        /*
+         * Deferred-work infrastructure.
+         * Linux delayed_work / workqueue_struct replaced by:
+         *   periodic tasks          → struct callout      + struct taskqueue *
+         *   one-shot tasks          → struct task         + struct taskqueue *
+         *   one-shot delayed tasks  → struct timeout_task + struct taskqueue *
+         *
+         * struct timeout_task is FreeBSD's direct analogue of Linux
+         * delayed_work: it arms a callout that then enqueues the task on the
+         * taskqueue, so the handler still runs in a context that may sleep.
+         * Its handler signature is void (*)(void *ctx, int pending), which is
+         * why idpf_init_task() and idpf_vc_event_task() are declared that way.
+         * [FBSD15:A32-A33]
+         */
+        struct timeout_task              init_task;     /* init_wq equiv */
+        struct taskqueue                *init_wq;
+        struct callout                   serv_task;     /* serv_wq equiv */
+        struct taskqueue                *serv_wq;
+        struct task                      mbx_task;      /* mbx_wq equiv */
+        struct taskqueue                *mbx_wq;
+        struct timeout_task              vc_event_task; /* vc_event_wq equiv */
+        struct taskqueue                *vc_event_wq;
+        struct callout                   stats_task;    /* stats_wq equiv */
+        struct taskqueue                *stats_wq;
+
+        /*
+         * The statistics and mailbox work sleeps on the mailbox, so its
+         * callout only hands the work to a taskqueue thread.
+         */
+        struct task                      stats_deferred;
+        struct callout                   mbx_poll_task;
+
+        struct virtchnl2_get_capabilities caps;         /* [IDPF:A13-A14] */
+        struct virtchnl2_vlan_get_caps    vlan_caps;    /* [IDPF:A13-A14] */
+        struct idpf_vc_xn_manager        *vcxn_mngr;
+
+        struct virtchnl2_edt_caps         edt_caps;    /* [IDPF:A13-A14] */
+
+        struct idpf_dev_ops               dev_ops;
+
+        bool                              req_tx_splitq;
+        bool                              req_rx_splitq;
+        bool                              crc_enable;
+
+        /*
+         * Control locks.
+         * Linux struct mutex replaced by struct sx (sleepable, allows
+         * msleep-equivalent operations inside the critical section).
+         * [FBSD15:A32]
+         */
+        struct sx                         vport_ctrl_lock;
+        struct sx                         vector_lock;
+        struct sx                         queue_lock;
+
+        /*
+         * ptp: CONDITIONAL (feature 217 — PTP time synchronization).
+         * NULL when PTP is not negotiated.  [ON_HOLD — see §23.4]
+         */
+        struct idpf_ptp                  *ptp;
+        uint32_t                          tx_compl_tstamp_gran_s;
+
+        /*
+         * corer_done: CORER completion notification.
+         * Linux struct completion replaced by condvar + mutex pair.
+         * [FBSD15:A32-A33]
+         */
+        struct mtx                        corer_done_lock;
+        struct cv                         corer_done_cv;
+        /* Set from the mailbox interrupt filter, so accessed atomically. */
+        volatile u_int                    corer_done_flag;
 };
+
+/* -----------------------------------------------------------------------
+ * Inline helpers
+ * ----------------------------------------------------------------------- */
 
 /**
  * idpf_is_queue_model_split - check if queue model is split
  * @q_model: queue model single or split
  *
- * Returns true if queue model is split else false
+ * Returns non-zero if queue model is split, zero otherwise.
+ * [IDPF:A13-A14]
  */
-static inline int idpf_is_queue_model_split(u16 q_model)
+static inline int
+idpf_is_queue_model_split(uint16_t q_model)
 {
-	return (q_model == VIRTCHNL2_QUEUE_MODEL_SPLIT);
-}
-
-#ifdef HAVE_XDP_SUPPORT
-/**
- * idpf_xdp_is_prog_ena - check if there is an XDP program on adapter
- * @vport: vport to check
- */
-static inline bool idpf_xdp_is_prog_ena(struct idpf_vport *vport)
-{
-	if (!vport->adapter)
-		return false;
-
-	return vport->adapter->vport_config[vport->idx]->user_config.xdp_prog;
+        return (q_model == VIRTCHNL2_QUEUE_MODEL_SPLIT);
 }
 
 /**
- * idpf_get_related_xdp_queue - Get corresponding XDP Tx queue for Rx queue
- * @rxq: Rx queue
+ * idpf_is_capability_ena - check whether a capability flag is set
+ * @adapter: private data struct
+ * @all: if true, all bits in @flag must be set; if false, any bit suffices
+ * @field: which capability field to inspect (enum idpf_cap_field)
+ * @flag: capability bitmask to test
  *
- * Returns a pointer to XDP Tx queue linked to a given Rx queue.
+ * Declared here; defined in idpf_lib.c.  [IDPF:A13-A14]
  */
-static inline struct idpf_queue *idpf_get_related_xdp_queue(struct idpf_queue *rxq)
-{
-	return rxq->vport->txqs[rxq->idx + rxq->vport->xdp_txq_offset];
-}
-
-/**
- * idpf_wait_for_hard_reset - Wait until the hard reset is completed
- * @adapter: pointer to the adapter under hard reset
- *
- * Returns zero if the hard reset is completed, or -EBUSY in case of timeout.
- */
-static inline int idpf_wait_for_hard_reset(struct idpf_adapter *adapter)
-{
-	int timeout = IDPF_HARD_RESET_TIMEOUT_MSEC;
-	int delay_msec = 100;
-
-	while (test_bit(IDPF_HR_RESET_IN_PROG, adapter->flags)) {
-		if (timeout <= 0)
-			return -EBUSY;
-
-		msleep(delay_msec);
-		timeout -= delay_msec;
-	}
-
-	return 0;
-}
-
-#endif /* HAVE_XDP_SUPPORT */
-
-#define idpf_is_cap_ena(adapter, field, flag) \
-	idpf_is_capability_ena(adapter, false, field, flag)
-#define idpf_is_cap_ena_all(adapter, field, flag) \
-	idpf_is_capability_ena(adapter, true, field, flag)
-
 bool idpf_is_capability_ena(struct idpf_adapter *adapter, bool all,
-			    enum idpf_cap_field field, u64 flag);
+                             enum idpf_cap_field field, uint64_t flag);
 
 /**
- * idpf_is_rdma_cap_ena - Determine if RDMA is supported
+ * idpf_get_reserved_vecs - get the number of vectors reserved by CP
  * @adapter: private data struct
+ * [IDPF:A13-A14]
+ */
+static inline uint16_t
+idpf_get_reserved_vecs(struct idpf_adapter *adapter)
+{
+        return le16toh(adapter->caps.num_allocated_vectors);
+}
+
+/**
+ * idpf_get_default_vports - get the default number of vports
+ * @adapter: private data struct
+ * [IDPF:A13-A14]
+ */
+static inline uint16_t
+idpf_get_default_vports(struct idpf_adapter *adapter)
+{
+        return le16toh(adapter->caps.default_num_vports);
+}
+
+/**
+ * idpf_get_max_vports - get the maximum number of vports
+ * @adapter: private data struct
+ * [IDPF:A13-A14]
+ */
+static inline uint16_t
+idpf_get_max_vports(struct idpf_adapter *adapter)
+{
+        return le16toh(adapter->caps.max_vports);
+}
+
+/**
+ * idpf_get_max_tx_bufs - get max scatter-gather buffers per TX packet
+ * @adapter: private data struct
+ * [IDPF:A13-A14]
+ */
+static inline unsigned int
+idpf_get_max_tx_bufs(struct idpf_adapter *adapter)
+{
+        return adapter->caps.max_sg_bufs_per_tx_pkt;
+}
+
+/**
+ * idpf_get_min_tx_pkt_len - get minimum TX packet length
+ * @adapter: private data struct
+ * [IDPF:A13-A14]
+ */
+static inline uint8_t
+idpf_get_min_tx_pkt_len(struct idpf_adapter *adapter)
+{
+        uint8_t pkt_len = adapter->caps.min_sso_packet_len;
+
+        return pkt_len ? pkt_len : IDPF_TX_MIN_PKT_LEN;
+}
+
+/**
+ * idpf_reg_offset_in_region - check that a u32 access fits inside a BAR region
+ * @region: mapped LAN BAR region descriptor
+ * @reg_offset: register offset to test
  *
- * Return: true if RDMA capability is enabled, false otherwise
- */
-static inline bool idpf_is_rdma_cap_ena(struct idpf_adapter *adapter)
-{
-	return idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS, VIRTCHNL2_CAP_RDMA);
-}
-
-#define IDPF_CAP_RSS (\
-	VIRTCHNL2_FLOW_IPV4_TCP		|\
-	VIRTCHNL2_FLOW_IPV4_TCP		|\
-	VIRTCHNL2_FLOW_IPV4_UDP		|\
-	VIRTCHNL2_FLOW_IPV4_SCTP	|\
-	VIRTCHNL2_FLOW_IPV4_OTHER	|\
-	VIRTCHNL2_FLOW_IPV6_TCP		|\
-	VIRTCHNL2_FLOW_IPV6_TCP		|\
-	VIRTCHNL2_FLOW_IPV6_UDP		|\
-	VIRTCHNL2_FLOW_IPV6_SCTP	|\
-	VIRTCHNL2_FLOW_IPV6_OTHER)
-
-#define IDPF_CAP_RSC (\
-	VIRTCHNL2_CAP_RSC_IPV4_TCP	|\
-	VIRTCHNL2_CAP_RSC_IPV6_TCP)
-
-#define IDPF_CAP_HSPLIT	(\
-	VIRTCHNL2_CAP_RX_HSPLIT_AT_L4V4	|\
-	VIRTCHNL2_CAP_RX_HSPLIT_AT_L4V6)
-
-#define IDPF_CAP_TX_CSUM_L4V4 (\
-	VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_TCP	|\
-	VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_UDP)
-
-#define IDPF_CAP_TX_CSUM_L4V6 (\
-	VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_TCP	|\
-	VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_UDP)
-
-#define IDPF_CAP_RX_CSUM (\
-	VIRTCHNL2_CAP_RX_CSUM_L3_IPV4		|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV4_TCP	|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV4_UDP	|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_TCP	|\
-	VIRTCHNL2_CAP_RX_CSUM_L4_IPV6_UDP)
-
-#define IDPF_CAP_TX_SCTP_CSUM (\
-	VIRTCHNL2_CAP_TX_CSUM_L4_IPV4_SCTP	|\
-	VIRTCHNL2_CAP_TX_CSUM_L4_IPV6_SCTP)
-
-#define IDPF_CAP_TUNNEL_TX_CSUM (\
-	VIRTCHNL2_CAP_TX_CSUM_L3_SINGLE_TUNNEL	|\
-	VIRTCHNL2_CAP_TX_CSUM_L4_SINGLE_TUNNEL)
-
-#define IDPF_VLAN_OFFLOAD_FEATURES (\
-	NETIF_F_HW_VLAN_CTAG_RX | \
-	NETIF_F_HW_VLAN_CTAG_TX)
-
-/**
- * idpf_get_reserved_vecs - Get reserved vectors
- * @adapter: private data struct
- */
-static inline u16 idpf_get_reserved_vecs(struct idpf_adapter *adapter)
-{
-	return le16_to_cpu(adapter->caps.num_allocated_vectors);
-}
-
-/**
- * idpf_get_reserved_rdma_vecs - Get reserved RDMA vectors
- * @adapter: private data struct
- */
-static inline u16 idpf_get_reserved_rdma_vecs(struct idpf_adapter *adapter)
-{
-	return le16_to_cpu(adapter->caps.num_rdma_allocated_vectors);
-}
-
-/**
- * idpf_get_default_vports - Get default number of vports
- * @adapter: private data struct
- */
-static inline u16 idpf_get_default_vports(struct idpf_adapter *adapter)
-{
-	return le16_to_cpu(adapter->caps.default_num_vports);
-}
-
-/**
- * idpf_get_max_vports - Get max number of vports
- * @adapter: private data struct
- */
-static inline u16 idpf_get_max_vports(struct idpf_adapter *adapter)
-{
-	return le16_to_cpu(adapter->caps.max_vports);
-}
-
-/**
- * idpf_get_max_tx_bufs - Get max scatter-gather buffers supported by the device
- * @adapter: private data struct
- */
-static inline unsigned int idpf_get_max_tx_bufs(struct idpf_adapter *adapter)
-{
-	return adapter->caps.max_sg_bufs_per_tx_pkt;
-}
-
-/**
- * idpf_get_min_tx_pkt_len - Get min packet length supported by the device
- * @adapter: private data struct
- */
-static inline u8 idpf_get_min_tx_pkt_len(struct idpf_adapter *adapter)
-{
-	u8 pkt_len = adapter->caps.min_sso_packet_len;
-
-	return pkt_len ? pkt_len : IDPF_TX_MIN_PKT_LEN;
-}
-
-/**
- * idpf_reg_offset_in_region - Check a u32 access fits inside a BAR region
- * @region: mapped LAN BAR region to test against
- * @reg_offset: register offset value
- *
- * Return: true when the full u32 access falls inside @region.
+ * Returns true when the full u32 access falls inside @region.
+ * [FBSD15:A31] [LOCAL:A22-A23]
  */
 static inline bool
 idpf_reg_offset_in_region(const struct idpf_mmio_reg *region,
-			  resource_size_t reg_offset)
+                           bus_size_t reg_offset)
 {
-	if (reg_offset < region->addr_start ||
-	    region->addr_len < sizeof(u32))
-		return false;
+        if (reg_offset < region->addr_start ||
+            region->addr_len < sizeof(uint32_t))
+                return false;
 
-	return reg_offset - region->addr_start <=
-	       region->addr_len - sizeof(u32);
+        return reg_offset - region->addr_start <=
+               region->addr_len - sizeof(uint32_t);
 }
 
 /**
- * idpf_reg_offset_is_mapped - Check whether a BAR0 register is mapped
+ * idpf_reg_offset_is_mapped - check whether a BAR0 register offset is mapped
+ * @adapter: private data struct
+ * @reg_offset: register offset to test
+ *
+ * Returns true when the full u32 access falls inside a mapped LAN BAR region.
+ * [FBSD15:A31] [LOCAL:A22-A23]
+ */
+static inline bool
+idpf_reg_offset_is_mapped(struct idpf_adapter *adapter,
+                           bus_size_t reg_offset)
+{
+        struct idpf_hw *hw = &adapter->hw;
+
+        for (int i = 0; i < hw->num_lan_regs; i++) {
+                if (idpf_reg_offset_in_region(&hw->lan_regs[i], reg_offset))
+                        return true;
+        }
+        return false;
+}
+
+/**
+ * idpf_get_mbx_reg_addr - get the mapped mailbox register address
+ * @adapter: private data struct
+ * @reg_offset: register offset within the mailbox region
+ *
+ * Returns the host-virtual address of the mailbox register.
+ * Callers must use bus_space accessors, not direct pointer dereference.
+ * [FBSD15:A31] [LOCAL:A22-A23]
+ */
+static inline void *
+idpf_get_mbx_reg_addr(struct idpf_adapter *adapter, bus_size_t reg_offset)
+{
+        return (uint8_t *)adapter->hw.mbx.vaddr + reg_offset;
+}
+
+/**
+ * idpf_get_rstat_reg_addr - get the mapped rstat register address
+ * @adapter: private data struct
+ * @reg_offset: absolute register offset (will be made region-relative)
+ *
+ * Returns the host-virtual address of the rstat register.
+ * Callers must use bus_space accessors, not direct pointer dereference.
+ * [FBSD15:A31] [LOCAL:A22-A23]
+ */
+static inline void *
+idpf_get_rstat_reg_addr(struct idpf_adapter *adapter, bus_size_t reg_offset)
+{
+        reg_offset -= adapter->hw.rstat.addr_start;
+        return (uint8_t *)adapter->hw.rstat.vaddr + reg_offset;
+}
+
+/**
+ * idpf_get_reg_addr - get the mapped BAR0 register address for any region
  * @adapter: private data struct
  * @reg_offset: register offset value
  *
- * Return: true when the full u32 register access falls inside a mapped LAN
- *	   BAR region, false otherwise.
+ * Walks the LAN region array and returns the host-virtual address.
+ * Callers must use bus_space accessors, not direct pointer dereference.
+ * Panics if the offset does not fall within any mapped region — this
+ * mirrors the Linux BUG() behaviour and makes the fault site explicit.
+ * [FBSD15:A31] [LOCAL:A22-A23]
  */
-static inline bool idpf_reg_offset_is_mapped(struct idpf_adapter *adapter,
-					     resource_size_t reg_offset)
+static inline void *
+idpf_get_reg_addr(struct idpf_adapter *adapter, bus_size_t reg_offset)
 {
-	struct idpf_hw *hw = &adapter->hw;
+        struct idpf_hw *hw = &adapter->hw;
 
-	for (int i = 0; i < hw->num_lan_regs; i++) {
-		if (idpf_reg_offset_in_region(&hw->lan_regs[i], reg_offset))
-			return true;
-	}
+        for (int i = 0; i < hw->num_lan_regs; i++) {
+                struct idpf_mmio_reg *region = &hw->lan_regs[i];
 
-	return false;
+                if (idpf_reg_offset_in_region(region, reg_offset)) {
+                        reg_offset -= region->addr_start;
+                        return (uint8_t *)region->vaddr + reg_offset;
+                }
+        }
+
+        /*
+         * No region matched.  This should never happen with offsets from CP.
+         * panic() here makes the fault site explicit rather than allowing a
+         * NULL-pointer dereference to produce a harder-to-diagnose trap.
+         * [FBSD15:A31] — mirrors Linux BUG() intent.
+         */
+        panic("idpf_get_reg_addr: offset 0x%jx not in any mapped BAR region",
+              (uintmax_t)reg_offset);
 }
 
 /**
- * idpf_get_mbx_reg_addr - Get BAR0 mailbox register address
+ * idpf_is_reset_in_prog - check whether any reset is in progress
  * @adapter: private data struct
- * @reg_offset: register offset value
  *
- * Return: BAR0 mailbox register address based on register offset.
+ * Returns true if a hard reset, function reset, or driver-load reset
+ * is currently active.  [LOCAL:A20-A21]
  */
-static inline void __iomem *idpf_get_mbx_reg_addr(struct idpf_adapter *adapter,
-						  resource_size_t reg_offset)
+static inline bool
+idpf_is_reset_in_prog(struct idpf_adapter *adapter)
 {
-	return adapter->hw.mbx.vaddr + reg_offset;
+        return (adapter->flags & ((1u << IDPF_HR_RESET_IN_PROG) |
+                                  (1u << IDPF_HR_FUNC_RESET)    |
+                                  (1u << IDPF_HR_DRV_LOAD))) != 0;
 }
 
 /**
- * idpf_get_rstat_reg_addr - Get BAR0 rstat register address
+ * idpf_is_resource_rel_in_prog - check whether resource release is in progress
  * @adapter: private data struct
- * @reg_offset: register offset value
  *
- * Return: BAR0 rstat register address based on register offset.
+ * Returns true if reset or driver removal is in progress.
+ * [LOCAL:A20-A21]
  */
-static inline void __iomem *idpf_get_rstat_reg_addr(struct idpf_adapter *adapter,
-						    resource_size_t reg_offset)
+static inline bool
+idpf_is_resource_rel_in_prog(struct idpf_adapter *adapter)
 {
-	reg_offset -= adapter->dev_ops.static_reg_info[1].start;
-
-	return adapter->hw.rstat.vaddr + reg_offset;
+        return (adapter->flags & ((1u << IDPF_HR_RESET_IN_PROG) |
+                                  (1u << IDPF_HR_FUNC_RESET)    |
+                                  (1u << IDPF_REMOVE_IN_PROG))) != 0;
 }
 
 /**
- * idpf_get_reg_addr - Get BAR0 register address
+ * idpf_netdev_to_vport - get the vport handle from an iflib context
+ * @ctx: iflib software context
+ *
+ * Replaces the Linux netdev_priv() pattern.  [FBSD15:A30]
+ */
+static inline struct idpf_vport *
+idpf_netdev_to_vport(if_ctx_t ctx)
+{
+        struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+
+        return np->vport;
+}
+
+/**
+ * idpf_netdev_to_adapter - get the adapter handle from an iflib context
+ * @ctx: iflib software context
+ *
+ * Replaces the Linux netdev_priv() pattern.  [FBSD15:A30]
+ */
+static inline struct idpf_adapter *
+idpf_netdev_to_adapter(if_ctx_t ctx)
+{
+        struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+
+        return np->adapter;
+}
+
+/**
+ * idpf_adapter_to_dev - get the FreeBSD device_t from an adapter
  * @adapter: private data struct
- * @reg_offset: register offset value
- *
- * Based on the register offset, return the actual BAR0 register address
+ * [FBSD15:A30]
  */
-static inline void __iomem *idpf_get_reg_addr(struct idpf_adapter *adapter,
-					      resource_size_t reg_offset)
+static inline device_t
+idpf_adapter_to_dev(struct idpf_adapter *adapter)
 {
-	struct idpf_hw *hw = &adapter->hw;
-
-	for (int i = 0; i < hw->num_lan_regs; i++) {
-		struct idpf_mmio_reg *region = &hw->lan_regs[i];
-
-		if (idpf_reg_offset_in_region(region, reg_offset)) {
-			/* Convert the offset so that it is relative to the
-			 * start of the region.  Then add the base address of
-			 * the region to get the final address.
-			 */
-			reg_offset -= region->addr_start;
-
-			return region->vaddr + reg_offset;
-		}
-	}
-
-	/* It's impossible to hit this case with offsets from the CP. But if we
-	 * do for any other reason, the kernel will panic on that register
-	 * access. Might as well do it here to make it clear what's happening.
-	 */
-	BUG();
-
-	return NULL;
+        return adapter->dev;
 }
 
 /**
- * idpf_is_reset_in_prog - check if reset is in progress
- * @adapter: driver specific private structure
- *
- * Returns true if hard reset is in progress, false otherwise
- */
-static inline bool idpf_is_reset_in_prog(struct idpf_adapter *adapter)
-{
-	return (test_bit(IDPF_HR_RESET_IN_PROG, adapter->flags) ||
-		test_bit(IDPF_HR_FUNC_RESET, adapter->flags) ||
-		test_bit(IDPF_HR_DRV_LOAD, adapter->flags));
-}
-
-/**
- * idpf_is_resource_rel_in_prog - Check if resource release is in progress
- * @adapter: Driver specific private structure
- *
- * Returns true if resource release is in progress, false otherwise
- */
-static inline bool idpf_is_resource_rel_in_prog(struct idpf_adapter *adapter)
-{
-	return (test_bit(IDPF_HR_RESET_IN_PROG, adapter->flags) ||
-		test_bit(IDPF_HR_FUNC_RESET, adapter->flags) ||
-		test_bit(IDPF_REMOVE_IN_PROG, adapter->flags));
-}
-
-/**
- * idpf_netdev_to_vport - Get vport handle from a netdev
- * @netdev: network interface device structure
- */
-static inline struct idpf_vport *idpf_netdev_to_vport(struct net_device *netdev)
-{
-	struct idpf_netdev_priv *np = netdev_priv(netdev);
-
-	return np->vport;
-}
-
-/**
- * idpf_netdev_to_adapter - Get adapter handle from a netdev
- * @netdev: Network interface device structure
- */
-static inline struct idpf_adapter *idpf_netdev_to_adapter(struct net_device *netdev)
-{
-	struct idpf_netdev_priv *np = netdev_priv(netdev);
-
-	return np->adapter;
-}
-
-/**
- * idpf_adapter_to_dev - Get device pointer from adapter
- * @adapter: driver specific private structure
- */
-static inline struct device *idpf_adapter_to_dev(struct idpf_adapter *adapter)
-{
-	return &adapter->pdev->dev;
-}
-
-#ifdef HAVE_NDO_FEATURES_CHECK
-/**
- * idpf_get_max_tx_hdr_size -- get the size of tx header
- * @adapter: Driver specific private structure
- */
-static inline u16 idpf_get_max_tx_hdr_size(struct idpf_adapter *adapter)
-{
-	return le16_to_cpu(adapter->caps.max_tx_hdr_size);
-}
-
-#endif /* HAVE_NDO_FEATURES_CHECK */
-#if defined(CONFIG_OEM_CAPS) || defined(CONFIG_P2P)
-/**
- * idpf_is_oem_cap_ena - Implementation of oem caps checking
+ * idpf_vport_ctrl_lock - acquire the vport control lock
  * @adapter: private data struct
- * @oem_cap: capability to check
+ *
+ * Protects non-datapath code against vport destruction.
+ * Caller must be in process context (sx_xlock may sleep).
+ * [FBSD15:A32]
  */
-static inline bool idpf_is_oem_cap_ena(struct idpf_adapter *adapter,
-				       u64 oem_cap)
+static inline void
+idpf_vport_ctrl_lock(struct idpf_adapter *adapter)
 {
-	u64 oem_caps = le64_to_cpu(adapter->oem_caps.oem_caps);
-
-	return !!(oem_caps & oem_cap);
+        sx_xlock(&adapter->vport_ctrl_lock);
 }
 
-#endif /* CONFIG_OEM_CAPS || CONFIG_P2P */
-#ifdef CONFIG_RCA_SUPPORT
 /**
- * idpf_is_rca_enabled - check if RCA is enabled
+ * idpf_vport_ctrl_unlock - release the vport control lock
+ * @adapter: private data struct
+ * [FBSD15:A32]
+ */
+static inline void
+idpf_vport_ctrl_unlock(struct idpf_adapter *adapter)
+{
+        sx_xunlock(&adapter->vport_ctrl_lock);
+}
+
+/**
+ * idpf_is_feature_ena - check whether a negotiated capability is enabled
+ * @vport: vport to check
+ * @cap: iflib/ifnet capability flag (e.g. IFCAP_TXCSUM)
+ *
+ * FreeBSD uses if_getcapenable() rather than netdev->features.
+ * Returns true if the capability is currently enabled on the interface.
+ * [FBSD15:A30]
+ */
+static inline bool
+idpf_is_feature_ena(struct idpf_vport *vport, int cap)
+{
+        if (vport->ifp == NULL)
+                return false;
+        return (if_getcapenable(vport->ifp) & cap) != 0;
+}
+
+/**
+ * idpf_get_vc_xn_min_timeout - get minimum VC transaction timeout in msec
+ * @adapter: private data struct
+ *
+ * Emulation and simulation platforms answer far more slowly than silicon.
+ */
+static inline int
+idpf_get_vc_xn_min_timeout(struct idpf_adapter *adapter)
+{
+        struct idpf_hw *hw = &adapter->hw;
+
+        if (IS_EMR_DEVICE(hw->subsystem_device_id))
+                return (120 * 1000);
+        else if (IS_SIMICS_DEVICE(hw->subsystem_device_id))
+                return (6 * 1000);
+
+        return 2000;
+}
+
+/**
+ * idpf_get_vc_xn_default_timeout - get default VC transaction timeout in msec
  * @adapter: private data struct
  */
-static inline bool idpf_is_rca_enabled(struct idpf_adapter *adapter)
+static inline int
+idpf_get_vc_xn_default_timeout(struct idpf_adapter *adapter)
 {
-	return idpf_is_oem_cap_ena(adapter, VIRTCHNL2_CAP_OEM_RCA);
+        struct idpf_hw *hw = &adapter->hw;
+
+        if (IS_EMR_DEVICE(hw->subsystem_device_id))
+                return (120 * 1000);
+        else
+                return (60 * 1000);
 }
 
-#endif /* CONFIG_RCA_SUPPORT */
-/**
- * idpf_vport_ctrl_lock - Acquire the vport control lock
- * @netdev: Network interface device structure
- *
- * This lock should be used by non-datapath code to protect against vport
- * destruction.
- */
-static inline void idpf_vport_ctrl_lock(struct net_device *netdev)
-{
-	struct idpf_netdev_priv *np = netdev_priv(netdev);
+/* -----------------------------------------------------------------------
+ * Function declarations
+ * Core method names are NOT renamed per architectural constraint.
+ * [LOCAL:A20-A25] [PROPOSED:A38]
+ * ----------------------------------------------------------------------- */
 
-	mutex_lock(&np->adapter->vport_ctrl_lock);
-}
+/* Periodic / deferred work entry points */
+void idpf_statistics_task(void *arg, int pending);
+void idpf_statistics_task_cb(void *arg);
+void idpf_init_task(void *arg, int pending);
+void idpf_service_task(void *arg);
+void idpf_mbx_task(void *arg, int pending);
+void idpf_mbx_task_cb(void *arg);
+void idpf_vc_event_task(void *arg, int pending);
 
-/**
- * idpf_vport_ctrl_unlock - Release the vport control lock
- * @netdev: Network interface device structure
- */
-static inline void idpf_vport_ctrl_unlock(struct net_device *netdev)
-{
-	struct idpf_netdev_priv *np = netdev_priv(netdev);
+/* Interface configuration */
+int  idpf_vport_cfg_ifp(struct idpf_vport *vport);
 
-	mutex_unlock(&np->adapter->vport_ctrl_lock);
-}
+/* iflib device-method table implemented in idpf_lib.c. */
+extern driver_t idpf_if_driver;
 
-void idpf_statistics_task(struct work_struct *work);
-void idpf_init_task(struct work_struct *work);
-void idpf_service_task(struct work_struct *work);
-void idpf_mbx_task(struct work_struct *work);
-void idpf_vc_event_task(struct work_struct *work);
+/* Device lifecycle ifdi methods, implemented in idpf_main.c. */
+int  idpf_if_attach_pre(if_ctx_t ctx);
+int  idpf_if_attach_post(if_ctx_t ctx);
+int  idpf_if_detach(if_ctx_t ctx);
+int  idpf_if_shutdown(if_ctx_t ctx);
+int  idpf_if_suspend(if_ctx_t ctx);
+int  idpf_if_resume(if_ctx_t ctx);
+
+/* Device-ops initializers */
 void idpf_dev_ops_init(struct idpf_adapter *adapter);
 void idpf_vf_dev_ops_init(struct idpf_adapter *adapter);
+
+/* Queue and vector management */
 void idpf_vport_adjust_qs(struct idpf_vport *vport,
-			  struct idpf_q_vec_rsrc *rsrc);
-int idpf_intr_req(struct idpf_adapter *adapter);
+                           struct idpf_q_vec_rsrc *rsrc);
+int  idpf_intr_req(struct idpf_adapter *adapter);
 void idpf_mb_intr_rel_irq(struct idpf_adapter *adapter);
 void idpf_intr_rel(struct idpf_adapter *adapter);
-#ifdef HAVE_NDO_FEATURES_CHECK
-u16 idpf_get_max_tx_hdr_size(struct idpf_adapter *adapter);
-#endif /* HAVE_NDO_FEATURES_CHECK */
-int idpf_initiate_soft_reset(struct idpf_vport *vport,
-			     enum idpf_vport_reset_cause reset_cause);
-void idpf_deinit_task(struct idpf_adapter *adapter);
-void idpf_deinit_vector_stack(struct idpf_adapter *adapter);
-int idpf_req_rel_vector_indexes(struct idpf_adapter *adapter,
-				u16 *q_vector_idxs,
-				struct idpf_vector_info *vec_info);
-int idpf_vport_alloc_vec_indexes(struct idpf_vport *vport,
-				 struct idpf_q_vec_rsrc *rsrc);
+int  idpf_req_rel_vector_indexes(struct idpf_adapter *adapter,
+                                  uint16_t *q_vector_idxs,
+                                  struct idpf_vector_info *vec_info);
+int  idpf_vport_alloc_vec_indexes(struct idpf_vport *vport,
+                                   struct idpf_q_vec_rsrc *rsrc);
 void idpf_vport_dealloc_vec_indexes(struct idpf_vport *vport,
-				    struct idpf_q_vec_rsrc *rsrc);
-void idpf_set_ethtool_ops(struct net_device *netdev);
-#if IS_ENABLED(CONFIG_ETHTOOL_NETLINK) && defined(HAVE_ETHTOOL_SUPPORT_TCP_DATA_SPLIT)
-u8 idpf_vport_get_hsplit(const struct idpf_vport *vport);
-bool idpf_vport_set_hsplit(const struct idpf_vport *vport, u8 val);
-#else
-void idpf_vport_set_hsplit(struct idpf_vport *vport, bool ena);
-#endif /* CONFIG_ETHTOOL_NETLINK && HAVE_ETHTOOL_SUPPORT_TCP_DATA_SPLIT */
-int idpf_idc_init(struct idpf_adapter *adapter);
-int idpf_idc_init_aux_core_dev(struct idpf_adapter *adapter,
-			       enum iidc_function_type ftype);
-void idpf_idc_deinit_core_aux_device(struct idpf_adapter *adapter);
-void idpf_idc_deinit_vport_aux_device(struct iidc_rdma_vport_dev_info *vdev_info);
-void idpf_idc_issue_reset_event(struct iidc_rdma_core_dev_info *cdev_info);
-void idpf_idc_vdev_mtu_event(struct iidc_rdma_vport_dev_info *vdev_info,
-			     enum iidc_rdma_event_type event_type);
-#ifdef DEVLINK_ENABLED
-void idpf_vport_dealloc(struct idpf_vport *vport);
-#endif /* DEVLINK_ENABLED */
-int idpf_vport_alloc_max_qs(struct idpf_adapter *adapter,
-			    struct idpf_vport_max_q *max_q);
+                                     struct idpf_q_vec_rsrc *rsrc);
+void idpf_deinit_vector_stack(struct idpf_adapter *adapter);
+
+/* Vport lifecycle */
+int  idpf_vport_alloc_max_qs(struct idpf_adapter *adapter,
+                               struct idpf_vport_max_q *max_q);
 void idpf_vport_dealloc_max_qs(struct idpf_adapter *adapter,
-			       struct idpf_vport_max_q *max_q);
-int idpf_set_promiscuous(struct idpf_adapter *adapter,
-			 struct idpf_vport_user_config_data *config_data,
-			 u32 vport_id);
-int idpf_vport_init(struct idpf_vport *vport, struct idpf_vport_max_q *max_q);
+                                 struct idpf_vport_max_q *max_q);
+int  idpf_vport_init(struct idpf_vport *vport,
+                      struct idpf_vport_max_q *max_q);
+void idpf_vport_dealloc(struct idpf_vport *vport);
+
+/* Soft reset */
+int  idpf_initiate_soft_reset(struct idpf_vport *vport,
+                               enum idpf_vport_reset_cause reset_cause);
+
+/* Adapter lifecycle */
+void idpf_deinit_task(struct idpf_adapter *adapter);
 void idpf_detach_and_close(struct idpf_adapter *adapter);
 void idpf_attach_and_open(struct idpf_adapter *adapter);
-int idpf_check_reset_complete(struct idpf_adapter *adapter);
-int idpf_reset_recover(struct idpf_adapter *adapter);
+
+/* Reset and recovery */
+int  idpf_check_reset_complete(struct idpf_adapter *adapter);
+int  idpf_reset_recover(struct idpf_adapter *adapter);
 bool idpf_is_reset_detected(struct idpf_adapter *adapter);
-int idpf_check_supported_desc_ids(struct idpf_vport *vport);
+
+/* Descriptor and interrupt helpers */
+int  idpf_check_supported_desc_ids(struct idpf_vport *vport);
 void idpf_vport_intr_write_itr(struct idpf_q_vector *q_vector,
-			       u16 itr, bool tx);
-#ifdef HAVE_XDP_SUPPORT
-#ifdef HAVE_XDP_FRAME_STRUCT
-int idpf_xdp_xmit(struct net_device *dev, int n, struct xdp_frame **frames,
-		  u32 flags);
-#else
-int idpf_xdp_xmit(struct net_device *dev, struct xdp_buff *xdp);
-#endif /* HAVE_XDP_FRAME_STRUCT */
-#ifndef NO_NDO_XDP_FLUSH
-void idpf_xdp_flush(struct net_device *dev);
-#endif /* NO_NDO_XDP_FLUSH */
-#endif /* HAVE_XDP_SUPPORT */
-int idpf_sriov_configure(struct pci_dev *pdev, int num_vfs);
-int idpf_sriov_config_vfs(struct pci_dev *pdev, int num_vfs);
+                                 uint16_t itr, bool tx);
+
+/* Promiscuous mode */
+int  idpf_set_promiscuous(struct idpf_adapter *adapter,
+                           struct idpf_vport_user_config_data *config_data,
+                           uint32_t vport_id);
+
+/* Header split (CONDITIONAL — feature 078a / hsplit).
+ * Signature uses plain bool; ethtool-netlink variant removed.  [LOCAL:A18] */
+void idpf_vport_set_hsplit(struct idpf_vport *vport, bool ena);
+
+/* Statistics task control */
 void idpf_stats_task_stop(struct idpf_adapter *adapter);
 void idpf_stats_task_start(struct idpf_adapter *adapter);
-/**
- * idpf_is_feature_ena - Determine if a particular feature is enabled
- * @vport: Vport to check
- * @feature: Netdev flag to check
- *
- * Returns true or false if a particular feature is enabled.
- */
-static inline bool idpf_is_feature_ena(struct idpf_vport *vport,
-				       netdev_features_t feature)
-{
-	return vport->netdev->features & feature;
-}
-
-#define IS_SILICON_DEVICE(subdev)      (!IS_SIMICS_DEVICE(subdev) && !IS_EMR_DEVICE(subdev))
-
-/***
- * idpf_get_vc_xn_min_timeout - Get minimum timeout for VC transaction in msec
- * @adapter: private data struct
- *
- * Returns minimum timeout for VC transaction in msec
- */
-static inline int idpf_get_vc_xn_min_timeout(struct idpf_adapter *adapter)
-{
-	struct idpf_hw *hw = &adapter->hw;
-
-	if (IS_EMR_DEVICE(hw->subsystem_device_id))
-		return (120 * 1000);
-	else if (IS_SIMICS_DEVICE(hw->subsystem_device_id))
-		return (6 * 1000);
-
-	return 2000;
-}
-
-/***
- * idpf_get_vc_xn_default_timeout - Get default timeout for VC transaction in msec
- * @adapter: private data struct
- *
- * Returns default timeout for VC transaction in msec
- */
-static inline int idpf_get_vc_xn_default_timeout(struct idpf_adapter *adapter)
-{
-	struct idpf_hw *hw = &adapter->hw;
-
-	if (IS_EMR_DEVICE(hw->subsystem_device_id))
-		return (120 * 1000);
-	else
-		return (60 * 1000);
-}
 
 #endif /* !_IDPF_H_ */

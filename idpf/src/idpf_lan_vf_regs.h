@@ -4,6 +4,28 @@
 #ifndef _IDPF_LAN_VF_REGS_H_
 #define _IDPF_LAN_VF_REGS_H_
 
+#include <sys/types.h>
+
+/*
+ * FreeBSD has no BIT()/GENMASK(); define them locally so the definitions
+ * below stay byte-identical to the common driver.  Guarded in case another
+ * header in the same translation unit already supplied them.
+ */
+#ifndef BIT
+#define BIT(n)			((uint32_t)1U << (n))
+#endif
+#ifndef BIT_ULL
+#define BIT_ULL(n)		((uint64_t)1ULL << (n))
+#endif
+#ifndef GENMASK
+#define GENMASK(h, l)		\
+	((uint32_t)((~0U >> (31 - (h))) & (~0U << (l))))
+#endif
+#ifndef GENMASK_ULL
+#define GENMASK_ULL(h, l)	\
+	((uint64_t)((~0ULL >> (63 - (h))) & (~0ULL << (l))))
+#endif
+
 /* Reset */
 #define VFGEN_RSTAT			0x00008800
 #define VFGEN_RSTAT_VFR_STATE_S		0
