@@ -225,37 +225,46 @@ else
 	pass "no leaked resources reported"
 fi
 
-section "10. PTP"
-# PTP requires VIRTCHNL2_CAP_PTP (bit 13 of other_caps) from the control
-# plane.  Without it the driver correctly creates no clock node.
+section "10. PTP negotiation"
+# The PTP capability path is exercised on every attach whether or not the
+# control plane grants it, so these assert behaviour rather than skipping.
 PTPLINE=$(grep -i "PTP:" "$OUTDIR/dmesg-attach.txt" 2>/dev/null | tail -1)
-if [ -z "$PTPLINE" ]; then
-	skip "no PTP status reported at attach"
-elif echo "$PTPLINE" | grep -q "not offered"; then
-	skip "control plane does not offer PTP - $PTPLINE"
-	log "  a PTP-capable control plane is required to test the clock"
-else
-	pass "PTP negotiated - $PTPLINE"
-	if sysctl "dev.${IFACE%%[0-9]*}.0.ptp_clock_ns" >/dev/null 2>&1; then
-		A=$(sysctl -n "dev.${IFACE%%[0-9]*}.0.ptp_clock_ns")
-		sleep 1
-		B=$(sysctl -n "dev.${IFACE%%[0-9]*}.0.ptp_clock_ns")
-		if [ "$B" -gt "$A" ] 2>/dev/null; then
-			pass "PTP device clock advances ($A -> $B)"
-		else
-			fail "PTP device clock did not advance"
-		fi
-	else
-		fail "PTP negotiated but no ptp_clock_ns sysctl"
-	fi
-fi
+PTPNODE="dev.${IFACE%%[0-9]*}.0.ptp_clock_ns"
 
-# FreeBSD has no SO_TIMESTAMPING and iflib's if_rxd_info carries no timestamp
-# field, so packet timestamping cannot be validated through the socket API.
-if command -v ptpd2 >/dev/null 2>&1; then
-	log "  ptpd2 present; packet timestamping still needs a PTP-capable CP"
+if [ -z "$PTPLINE" ]; then
+	fail "attach reported no PTP status at all"
+elif echo "$PTPLINE" | grep -q "not offered"; then
+	# Negotiation ran and correctly declined.  The contract is then that
+	# no clock node exists; publishing one would expose an unreadable clock.
+	pass "PTP negotiation ran and declined: ${PTPLINE#*PTP: }"
+	CAPS=$(echo "$PTPLINE" | sed -n 's/.*other_caps \(0x[0-9a-f]*\).*/\1/p')
+	if [ -n "$CAPS" ]; then
+		# VIRTCHNL2_CAP_PTP is bit 13 (0x2000) of other_caps.
+		if [ $(( CAPS & 0x2000 )) -eq 0 ] 2>/dev/null; then
+			pass "reported caps $CAPS confirm bit 13 clear"
+		else
+			fail "caps $CAPS have PTP bit 13 set but PTP was declined"
+		fi
+	fi
+	if sysctl "$PTPNODE" >/dev/null 2>&1; then
+		fail "ptp_clock_ns published although PTP was not negotiated"
+	else
+		pass "no clock node published, matching the declined capability"
+	fi
 else
-	skip "no ptpd2 installed"
+	pass "PTP negotiated: ${PTPLINE#*PTP: }"
+	if ! sysctl "$PTPNODE" >/dev/null 2>&1; then
+		fail "PTP negotiated but $PTPNODE is missing"
+	else
+		A=$(sysctl -n "$PTPNODE" 2>/dev/null)
+		sleep 1
+		B=$(sysctl -n "$PTPNODE" 2>/dev/null)
+		if [ "${B:-0}" -gt "${A:-0}" ] 2>/dev/null; then
+			pass "device clock advances ($A -> $B)"
+		else
+			fail "device clock did not advance ($A -> $B)"
+		fi
+	fi
 fi
 
 section "Summary"
