@@ -120,17 +120,21 @@ idpf_handle_event_link(struct idpf_adapter *adapter,
 	np = iflib_get_softc(vport->ctx);
 	np->link_speed_mbps = le32toh(v2e->link_speed);
 
-	if (vport->link_up == (bool)v2e->link_status)
+	if (vport->link_known && vport->link_up == (bool)v2e->link_status)
 		return (0);
 
+	vport->link_known = true;
 	vport->link_up = v2e->link_status;
 
-	if ((np->state & (1u << IDPF_VPORT_UP)) == 0)
-		return (0);
-
-	iflib_link_state_change(vport->ctx,
-	    vport->link_up ? LINK_STATE_UP : LINK_STATE_DOWN,
-	    IF_Mbps(np->link_speed_mbps));
+	/*
+	 * Published even while the interface is down so that ifmedia and
+	 * iflib do not report a stale carrier once it is brought up.  The
+	 * ifnet does not exist until attach_post, so skip until it does.
+	 */
+	if (vport->ifp != NULL)
+		iflib_link_state_change(vport->ctx,
+		    vport->link_up ? LINK_STATE_UP : LINK_STATE_DOWN,
+		    IF_Mbps(np->link_speed_mbps));
 
 	return (0);
 }

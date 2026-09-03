@@ -548,6 +548,8 @@ struct idpf_vport {
         bool                     default_vport;
         bool                     crc_enable;
         bool                     link_up;
+        /* Cleared until the control plane reports link for the first time. */
+        bool                     link_known;
 
         /*
          * Software-marker drain wait.

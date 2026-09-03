@@ -2633,10 +2633,18 @@ idpf_if_media_status(if_ctx_t ctx, struct ifmediareq *ifmr)
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 	struct idpf_vport *vport = np->vport;
 
-	ifmr->ifm_status = IFM_AVALID;
 	ifmr->ifm_active = IFM_ETHER;
 
-	if (vport == NULL || !vport->link_up)
+	/*
+	 * Leave IFM_AVALID clear until the control plane has reported link;
+	 * setting it would claim "no carrier" when the state is simply unknown.
+	 */
+	ifmr->ifm_status = 0;
+	if (vport == NULL || !vport->link_known)
+		return;
+
+	ifmr->ifm_status = IFM_AVALID;
+	if (!vport->link_up)
 		return;
 
 	ifmr->ifm_status |= IFM_ACTIVE;
