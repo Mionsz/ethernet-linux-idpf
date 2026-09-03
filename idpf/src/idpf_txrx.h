@@ -1218,6 +1218,7 @@ int  idpf_vport_queue_alloc_all(struct idpf_vport *vport,
                                   struct idpf_q_vec_rsrc *rsrc);
 void idpf_vport_queues_rel(struct idpf_vport *vport,
                              struct idpf_q_vec_rsrc *rsrc);
+void idpf_vport_set_rx_frame_size(struct idpf_q_vec_rsrc *rsrc, uint32_t mtu);
 
 /*
  * RX buffer management is owned by iflib.  The Linux refill-queue helpers

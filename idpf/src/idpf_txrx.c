@@ -1057,6 +1057,30 @@ idpf_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
 }
 
 /**
+ * idpf_vport_set_rx_frame_size - publish a new MTU into the RX queues
+ * @rsrc: queue and vector resources
+ * @mtu: new interface MTU
+ *
+ * The queues survive a stop/init cycle, so an MTU change has to be written
+ * into them before the queues are reconfigured.
+ */
+void
+idpf_vport_set_rx_frame_size(struct idpf_q_vec_rsrc *rsrc, uint32_t mtu)
+{
+	uint16_t i;
+
+	if (rsrc->rxq_grps == NULL)
+		return;
+
+	for (i = 0; i < rsrc->num_rxq; i++) {
+		struct idpf_queue *rxq = idpf_rxq(rsrc, i);
+
+		if (rxq != NULL)
+			rxq->rx_max_pkt_size = mtu + IDPF_PACKET_HDR_PAD;
+	}
+}
+
+/**
  * idpf_queues_free - ifdi_queues_free() implementation
  * @ctx: iflib context
  *

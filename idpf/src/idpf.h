@@ -79,6 +79,25 @@
  * Attach-path tracing.  Build with -DIDPF_DEBUG to enable; these are progress
  * markers, not error reports, so they stay silent in a normal build.
  */
+/*
+ * Driver-private ioctl payload, carried by struct ifdrv through
+ * SIOCGDRVSPEC.  iflib routes only SIOCGPRIVATE_0 and SIOCxDRVSPEC to
+ * ifdi_priv_ioctl, so no new SIOC number is defined.
+ */
+#define IDPF_DRVCMD_GET_INFO	0
+
+struct idpf_drv_info {
+	uint32_t	vport_id;
+	uint32_t	link_speed_mbps;
+	uint16_t	num_txq;
+	uint16_t	num_rxq;
+	uint16_t	num_q_vectors;
+	uint8_t		link_up;
+	uint8_t		link_known;
+	uint8_t		mac[ETHER_ADDR_LEN];
+	uint8_t		pad[2];
+};
+
 #ifdef IDPF_DEBUG
 #define idpf_dbg(dev, ...)	device_printf((dev), __VA_ARGS__)
 #else

@@ -53,6 +53,8 @@
 #include <net/if_var.h>
 #include <net/ethernet.h>
 
+#include <sys/sockio.h>
+
 #include "idpf.h"
 #include "idpf_virtchnl.h"
 #include "idpf_ptp.h"
@@ -1181,9 +1183,14 @@ idpf_vport_stop(struct idpf_vport *vport)
 
 	idpf_remove_features(vport);
 
+	/*
+	 * Only the hardware side is torn down here.  iflib hands the descriptor
+	 * rings to the driver once, through ifdi_rx_queues_alloc(), and assigns
+	 * the queue interrupts once, through ifdi_msix_intr_assign(); releasing
+	 * either on stop would leave the next init refilling a freed ring.
+	 * They are released in ifdi_queues_free() and idpf_vport_rel().
+	 */
 	idpf_vport_intr_deinit(vport, rsrc);
-	idpf_vport_queues_rel(vport, rsrc);
-	idpf_vport_intr_rel(rsrc);
 }
 
 /**
@@ -2464,6 +2471,7 @@ idpf_if_mtu_set(if_ctx_t ctx, uint32_t mtu)
 {
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 	struct idpf_vport *vport = np->vport;
+	if_softc_ctx_t scctx = iflib_get_softc_ctx(ctx);
 
 	if (vport == NULL)
 		return (ENXIO);
@@ -2472,8 +2480,16 @@ idpf_if_mtu_set(if_ctx_t ctx, uint32_t mtu)
 		return (EINVAL);
 
 	if_setmtu(iflib_get_ifp(ctx), mtu);
+	scctx->isc_max_frame_size = mtu + ETHER_HDR_LEN + ETHER_CRC_LEN;
 
-	return (idpf_initiate_soft_reset(vport, IDPF_SR_MTU_CHANGE));
+	/*
+	 * The queues are not reallocated across a stop/init cycle, so the new
+	 * frame size has to be written into them before the reconfiguration
+	 * that iflib performs around this call sends it to the device.
+	 */
+	idpf_vport_set_rx_frame_size(&vport->dflt_qv_rsrc, mtu);
+
+	return (0);
 }
 
 /**
@@ -2620,6 +2636,49 @@ idpf_if_get_counter(if_ctx_t ctx, ift_counter cnt)
 	mtx_unlock(&np->stats_lock);
 
 	return (val);
+}
+
+/**
+ * idpf_if_priv_ioctl - ifdi_priv_ioctl() implementation
+ * @ctx: iflib context
+ * @command: socket ioctl command
+ * @data: struct ifdrv from userspace
+ *
+ * iflib dispatches only SIOCGPRIVATE_0 and SIOCxDRVSPEC here, under a
+ * sleepable context lock, so copyout() is safe.
+ *
+ * Return: 0 on success, otherwise an errno.
+ */
+static int
+idpf_if_priv_ioctl(if_ctx_t ctx, u_long command, caddr_t data)
+{
+	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+	struct ifdrv *ifd = (struct ifdrv *)data;
+	struct idpf_vport *vport = np->vport;
+	struct idpf_q_vec_rsrc *rsrc;
+	struct idpf_drv_info info;
+
+	if (command != SIOCGDRVSPEC)
+		return (ENOTTY);
+	if (vport == NULL)
+		return (ENXIO);
+	if (ifd->ifd_cmd != IDPF_DRVCMD_GET_INFO)
+		return (EINVAL);
+	if (ifd->ifd_len != sizeof(info))
+		return (EINVAL);
+
+	rsrc = &vport->dflt_qv_rsrc;
+	memset(&info, 0, sizeof(info));
+	info.vport_id = vport->vport_id;
+	info.link_speed_mbps = np->link_speed_mbps;
+	info.num_txq = rsrc->num_txq;
+	info.num_rxq = rsrc->num_rxq;
+	info.num_q_vectors = rsrc->num_q_vectors;
+	info.link_up = vport->link_up;
+	info.link_known = vport->link_known;
+	memcpy(info.mac, vport->default_mac_addr, ETHER_ADDR_LEN);
+
+	return (copyout(&info, ifd->ifd_data, sizeof(info)));
 }
 
 /**
@@ -2772,6 +2831,7 @@ static device_method_t idpf_if_methods[] = {
 	DEVMETHOD(ifdi_mtu_set,			idpf_if_mtu_set),
 	DEVMETHOD(ifdi_media_status,		idpf_if_media_status),
 	DEVMETHOD(ifdi_media_change,		idpf_if_media_change),
+	DEVMETHOD(ifdi_priv_ioctl,		idpf_if_priv_ioctl),
 	DEVMETHOD(ifdi_promisc_set,		idpf_if_promisc_set),
 	DEVMETHOD(ifdi_timer,			idpf_if_timer),
 	DEVMETHOD(ifdi_watchdog_reset,		idpf_if_watchdog_reset),

@@ -738,7 +738,6 @@ idpf_if_attach_post(if_ctx_t ctx)
 		np->vport->ifp = ifp;
 		if_setcapabilities(ifp, scctx->isc_capabilities);
 		if_setcapenable(ifp, scctx->isc_capenable);
-		if_setbaudrate(ifp, IF_Gbps(25));
 		if_setmtu(ifp, min(if_getmtu(ifp), np->vport->max_mtu));
 	}
 
