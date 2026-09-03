@@ -65,6 +65,9 @@
 
 #define DRV_SUMMARY	"Intel(R) Infrastructure Data Path Function Driver"
 
+/* How long attach waits for the control plane to finish creating vports. */
+#define IDPF_RESET_SETTLE_MS	15000
+
 #define IDPF_INTEL_VENDOR_ID	0x8086
 
 /* Written to VF_ARQBAL to tell a VF BAR apart from a PF one. */
@@ -128,9 +131,9 @@ static struct if_shared_ctx idpf_sctx = {
 	.isc_vendor_info	= idpf_vendor_info_array,
 	.isc_driver_version	= IDPF_DRV_VER,
 
-	.isc_nfl		= IDPF_MAX_BUFQS_PER_RXQ_GRP,
-	.isc_ntxqs		= 2,
-	.isc_nrxqs		= 1 + IDPF_MAX_BUFQS_PER_RXQ_GRP,
+	.isc_nfl		= 1,
+	.isc_ntxqs		= 1,
+	.isc_nrxqs		= 1,
 
 	.isc_ntxd_min		= { IDPF_MIN_TXQ_DESC, IDPF_MIN_TXQ_DESC },
 	.isc_ntxd_max		= { IDPF_MAX_TXQ_DESC, IDPF_MAX_TXQ_DESC },
@@ -152,8 +155,7 @@ static struct if_shared_ctx idpf_sctx = {
 	.isc_rx_maxsegsize	= IDPF_RX_BUF_4096,
 	.isc_rx_nsegments	= IDPF_MAX_BUFQS_PER_RXQ_GRP,
 
-	.isc_flags		= IFLIB_HAS_TXCQ | IFLIB_HAS_RXCQ |
-				  IFLIB_SKIP_MSIX | IFLIB_ADMIN_ALWAYS_RUN,
+	.isc_flags		= IFLIB_SKIP_MSIX | IFLIB_ADMIN_ALWAYS_RUN,
 };
 
 /**
@@ -394,12 +396,125 @@ fail:
 }
 
 /**
+ * idpf_set_softc_ctx - publish the negotiated queue geometry to iflib
+ * @ctx: iflib context
+ * @vport: vport whose default resources describe the geometry
+ *
+ * iflib reads all of this immediately after ifdi_attach_pre() returns, so it
+ * has to be filled in before then.  That is the reason the control-plane
+ * handshake runs synchronously during attach: the queue counts and descriptor
+ * sizes are only known once the vport exists.
+ *
+ * Return: 0 on success, EINVAL when the negotiated geometry does not match the
+ * ring counts declared in the shared context.
+ */
+static int
+idpf_set_softc_ctx(if_ctx_t ctx, struct idpf_vport *vport)
+{
+	if_softc_ctx_t scctx = iflib_get_softc_ctx(ctx);
+	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
+	struct idpf_adapter *adapter = vport->adapter;
+	device_t dev = idpf_adapter_to_dev(adapter);
+	bool tx_split = idpf_is_queue_model_split(rsrc->txq_model);
+	bool rx_split = idpf_is_queue_model_split(rsrc->rxq_model);
+	int expect_rxqs, expect_txqs;
+	int caps = 0;
+	int i;
+
+	/*
+	 * The shared context declares the per-set ring counts statically, so a
+	 * device that negotiates a different shape has to be rejected rather
+	 * than left to overrun the descriptor arrays.
+	 */
+	expect_txqs = tx_split ? 2 : 1;
+	expect_rxqs = rx_split ? 1 + rsrc->num_bufqs_per_qgrp : 1;
+	if (expect_txqs != idpf_sctx.isc_ntxqs ||
+	    expect_rxqs != idpf_sctx.isc_nrxqs) {
+		device_printf(dev,
+		    "negotiated queue shape %dx%d unsupported by this driver "
+		    "build (%dx%d)\n", expect_txqs, expect_rxqs,
+		    idpf_sctx.isc_ntxqs, idpf_sctx.isc_nrxqs);
+		return (EINVAL);
+	}
+
+	scctx->isc_txrx = &idpf_txrx_ops;
+
+	scctx->isc_ntxqsets = rsrc->num_txq;
+	scctx->isc_nrxqsets = rsrc->num_rxq;
+	scctx->isc_ntxqsets_max = rsrc->num_txq;
+	scctx->isc_nrxqsets_max = rsrc->num_rxq;
+	scctx->isc_vectors = rsrc->num_q_vectors;
+
+	/* Ring 0 of a split TX set is the completion queue. */
+	if (tx_split) {
+		scctx->isc_txd_size[0] =
+		    sizeof(struct idpf_splitq_tx_compl_desc);
+		scctx->isc_txd_size[1] = sizeof(union idpf_tx_flex_desc);
+	} else {
+		scctx->isc_txd_size[0] = sizeof(struct idpf_base_tx_desc);
+	}
+	for (i = 0; i < expect_txqs; i++)
+		scctx->isc_txqsizes[i] = roundup2(scctx->isc_ntxd[i] *
+		    scctx->isc_txd_size[i], PAGE_SIZE);
+
+	/* Ring 0 of an RX set is the completion queue, the rest are free lists. */
+	scctx->isc_rxd_size[0] = sizeof(union virtchnl2_rx_desc);
+	if (rx_split) {
+		for (i = 1; i < expect_rxqs; i++)
+			scctx->isc_rxd_size[i] =
+			    sizeof(struct virtchnl2_splitq_rx_buf_desc);
+	}
+	for (i = 0; i < expect_rxqs; i++)
+		scctx->isc_rxqsizes[i] = roundup2(scctx->isc_nrxd[i] *
+		    scctx->isc_rxd_size[i], PAGE_SIZE);
+
+	scctx->isc_tx_nsegments = idpf_get_max_tx_bufs(adapter);
+	scctx->isc_tx_tso_segments_max = idpf_get_max_tx_bufs(adapter);
+	scctx->isc_tx_tso_size_max = IDPF_TX_MAX_DESC_DATA;
+	scctx->isc_tx_tso_segsize_max = IDPF_TX_MAX_READ_REQ_SIZE;
+
+	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_TX_CSUM_L4V4))
+		caps |= IFCAP_TXCSUM;
+	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_TX_CSUM_L4V6))
+		caps |= IFCAP_TXCSUM_IPV6;
+	if (idpf_is_cap_ena(adapter, IDPF_CSUM_CAPS, IDPF_CAP_RX_CSUM))
+		caps |= IFCAP_RXCSUM | IFCAP_RXCSUM_IPV6;
+	if (idpf_is_cap_ena(adapter, IDPF_SEG_CAPS, VIRTCHNL2_CAP_SEG_IPV4_TCP))
+		caps |= IFCAP_TSO4;
+	if (idpf_is_cap_ena(adapter, IDPF_SEG_CAPS, VIRTCHNL2_CAP_SEG_IPV6_TCP))
+		caps |= IFCAP_TSO6;
+	if (idpf_is_cap_ena_all(adapter, IDPF_RSC_CAPS, IDPF_CAP_RSC))
+		caps |= IFCAP_LRO;
+	caps |= idpf_get_vlan_caps(adapter);
+	/* LINKSTATE: the control plane pushes link events to iflib. */
+	caps |= IFCAP_JUMBO_MTU | IFCAP_HWSTATS | IFCAP_LINKSTATE;
+
+	scctx->isc_capabilities = caps;
+	scctx->isc_capenable = caps;
+	scctx->isc_tx_csum_flags = IDPF_CSUM_OFFLOAD;
+
+	scctx->isc_max_frame_size = vport->max_mtu + ETHER_HDR_LEN +
+	    ETHER_CRC_LEN;
+	scctx->isc_min_frame_size = ETHER_MIN_LEN;
+
+	/* Vectors are pooled across vports in idpf_intr_req(), not by iflib. */
+	scctx->isc_msix_bar = -1;
+	scctx->isc_intr = IFLIB_INTR_MSIX;
+
+	scctx->isc_rss_table_size =
+	    adapter->vport_config[vport->idx]->user_config.rss_data.rss_lut_size;
+
+	return (0);
+}
+
+/**
  * idpf_if_attach_pre - ifdi_attach_pre() implementation
  * @ctx: iflib context
  *
  * Claims BAR0, identifies the device, builds the deferred-work
- * infrastructure and kicks off the load-time reset that ends in
- * idpf_vc_core_init().
+ * infrastructure and runs the load-time reset through to a created vport, so
+ * that the negotiated geometry can be handed to iflib before it builds the
+ * queues.
  *
  * Return: 0 on success, otherwise an errno.
  */
@@ -409,7 +524,7 @@ idpf_if_attach_pre(if_ctx_t ctx)
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 	device_t dev = iflib_get_dev(ctx);
 	struct idpf_adapter *adapter;
-	int rid, err;
+	int rid, msix_cap, err;
 
 	adapter = malloc(sizeof(*adapter), M_IDPF, M_NOWAIT | M_ZERO);
 	if (adapter == NULL)
@@ -420,8 +535,14 @@ idpf_if_attach_pre(if_ctx_t ctx)
 	adapter->drv_name = IDPF_DRV_NAME;
 	adapter->drv_ver = IDPF_DRV_VER;
 
-	adapter->req_tx_splitq = true;
-	adapter->req_rx_splitq = true;
+	/*
+	 * Single queue model: this control plane does not advertise
+	 * VIRTCHNL2_CAP_SPLITQ_QSCHED, and flow-scheduled split TX retires
+	 * completion tags out of order, which iflib's in-order credit
+	 * interface cannot express.
+	 */
+	adapter->req_tx_splitq = false;
+	adapter->req_rx_splitq = false;
 
 	mtx_init(&np->stats_lock, "idpf_stats", NULL, MTX_DEF);
 
@@ -444,6 +565,29 @@ idpf_if_attach_pre(if_ctx_t ctx)
 		device_printf(dev, "failed to map BAR0\n");
 		err = ENXIO;
 		goto err_locks;
+	}
+
+	/*
+	 * The MSI-X table lives in its own BAR, which pci_alloc_msix() requires
+	 * to be mapped before it will hand out vectors.  The BAR index comes
+	 * from the capability rather than being assumed.
+	 */
+	if (pci_find_cap(dev, PCIY_MSIX, &msix_cap) == 0) {
+		uint32_t table;
+
+		table = pci_read_config(dev, msix_cap + PCIR_MSIX_TABLE, 4);
+		rid = PCIR_BAR(table & PCIM_MSIX_BIR_MASK);
+		if (rid != PCIR_BAR(0)) {
+			adapter->dev_ops.static_reg_info[1] =
+			    bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+			    RF_ACTIVE);
+			if (adapter->dev_ops.static_reg_info[1] == NULL) {
+				device_printf(dev,
+				    "failed to map the MSI-X table BAR\n");
+				err = ENXIO;
+				goto err_bar;
+			}
+		}
 	}
 
 	adapter->vcxn_mngr = malloc(sizeof(*adapter->vcxn_mngr), M_IDPF,
@@ -475,18 +619,82 @@ idpf_if_attach_pre(if_ctx_t ctx)
 
 	adapter->dev_ops.reg_ops.reset_reg_init(adapter);
 
+	/*
+	 * The vport has to exist before iflib builds the queues, so the load
+	 * reset is driven here rather than from the event task.  This blocks
+	 * until the control plane has answered and idpf_init_task() has created
+	 * the default vport.
+	 */
+	adapter->attach_ctx = ctx;
 	adapter->flags |= (1u << IDPF_HR_DRV_LOAD);
-	taskqueue_enqueue_timeout(adapter->vc_event_wq, &adapter->vc_event_task,
-	    idpf_msecs_to_ticks(10 * (pci_get_function(dev) & 0x07)));
+	/*
+	 * idpf_reset_recover() only waits for the vport if this is set, which
+	 * is what makes the call below synchronous.
+	 */
+	adapter->flags |= (1u << IDPF_HR_RESET_IN_PROG);
+	idpf_init_hard_reset(adapter);
+
+	if (np->vport == NULL) {
+		device_printf(dev, "no vport after load reset\n");
+		err = EIO;
+		goto err_bringup;
+	}
+
+	err = idpf_set_softc_ctx(ctx, np->vport);
+	if (err != 0)
+		goto err_bringup;
+
+	/*
+	 * iflib allocates the descriptor rings as soon as this returns and
+	 * hands them straight to ifdi_tx_queues_alloc(), so the software
+	 * queue structures have to exist now.  The Linux flow only built
+	 * them at open.
+	 */
+	err = idpf_vport_intr_alloc(np->vport, &np->vport->dflt_qv_rsrc);
+	if (err != 0) {
+		device_printf(dev, "failed to allocate interrupt vectors: %d\n",
+		    err);
+		goto err_bringup;
+	}
+
+	err = idpf_vport_queue_alloc_all(np->vport, &np->vport->dflt_qv_rsrc);
+	if (err != 0) {
+		device_printf(dev, "failed to allocate queue structures: %d\n",
+		    err);
+		goto err_bringup;
+	}
+
+	/* iflib passes this to ether_ifattach() before attach_post runs. */
+	iflib_set_mac(ctx, np->vport->default_mac_addr);
+
+	/*
+	 * The control plane reports a speed but not a medium, so only
+	 * autoselect is offered; idpf_if_media_status() fills in the detail.
+	 */
+	ifmedia_add(iflib_get_media(ctx), IFM_ETHER | IFM_AUTO, 0, NULL);
+	ifmedia_set(iflib_get_media(ctx), IFM_ETHER | IFM_AUTO);
 
 	return (0);
 
+err_bringup:
+	idpf_vc_core_deinit(adapter);
+	idpf_deinit_dflt_mbx(adapter);
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+	idpf_free_taskqueues(adapter);
 err_vcxn:
 	idpf_vc_xn_shutdown(adapter->vcxn_mngr);
 	idpf_deinit_vc_xn_completion(adapter->vcxn_mngr);
 	free(adapter->vcxn_mngr, M_IDPF);
 	adapter->vcxn_mngr = NULL;
 err_bar:
+	if (adapter->dev_ops.static_reg_info[1] != NULL) {
+		bus_release_resource(dev, SYS_RES_MEMORY,
+		    rman_get_rid(adapter->dev_ops.static_reg_info[1]),
+		    adapter->dev_ops.static_reg_info[1]);
+		adapter->dev_ops.static_reg_info[1] = NULL;
+	}
 	bus_release_resource(dev, SYS_RES_MEMORY, PCIR_BAR(0),
 	    adapter->dev_ops.static_reg_info[0]);
 	adapter->dev_ops.static_reg_info[0] = NULL;
@@ -518,10 +726,20 @@ idpf_if_attach_post(if_ctx_t ctx)
 {
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 	struct idpf_adapter *adapter = np->adapter;
-	static uint8_t zero_mac[ETHER_ADDR_LEN];
+	if_softc_ctx_t scctx = iflib_get_softc_ctx(ctx);
+	if_t ifp = iflib_get_ifp(ctx);
 
-	iflib_set_mac(ctx, np->vport != NULL ? np->vport->default_mac_addr :
-	    zero_mac);
+	/*
+	 * The vport was created before this ifnet existed, so the properties
+	 * idpf_vport_cfg_ifp() had to skip are published here.
+	 */
+	if (ifp != NULL && np->vport != NULL) {
+		np->vport->ifp = ifp;
+		if_setcapabilities(ifp, scctx->isc_capabilities);
+		if_setcapenable(ifp, scctx->isc_capenable);
+		if_setbaudrate(ifp, IF_Gbps(25));
+		if_setmtu(ifp, min(if_getmtu(ifp), np->vport->max_mtu));
+	}
 
 	device_printf(adapter->dev, "%s, version %s\n", DRV_SUMMARY,
 	    IDPF_DRV_VER);
@@ -596,6 +814,12 @@ idpf_if_detach(if_ctx_t ctx)
 		adapter->vcxn_mngr = NULL;
 	}
 
+	if (adapter->dev_ops.static_reg_info[1] != NULL) {
+		bus_release_resource(dev, SYS_RES_MEMORY,
+		    rman_get_rid(adapter->dev_ops.static_reg_info[1]),
+		    adapter->dev_ops.static_reg_info[1]);
+		adapter->dev_ops.static_reg_info[1] = NULL;
+	}
 	if (adapter->dev_ops.static_reg_info[0] != NULL) {
 		bus_release_resource(dev, SYS_RES_MEMORY, PCIR_BAR(0),
 		    adapter->dev_ops.static_reg_info[0]);
@@ -721,6 +945,7 @@ int
 idpf_reset_recover(struct idpf_adapter *adapter)
 {
 	device_t dev = idpf_adapter_to_dev(adapter);
+	int waited;
 	int err;
 
 	err = idpf_init_dflt_mbx(adapter);
@@ -743,10 +968,22 @@ idpf_reset_recover(struct idpf_adapter *adapter)
 
 	/*
 	 * Hold the reset until every vport exists, otherwise an ioctl can
-	 * reach a half-built one.
+	 * reach a half-built one.  Bounded: this runs in the attach thread, so
+	 * waiting forever would take the machine with it.
 	 */
-	while ((adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) != 0)
+	for (waited = 0; waited < IDPF_RESET_SETTLE_MS; waited += 100) {
+		if ((adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) == 0)
+			break;
 		pause("idpfrec", idpf_msecs_to_ticks(100));
+	}
+	if ((adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) != 0) {
+		device_printf(dev,
+		    "vports did not settle within %d ms (flags 0x%x state %d)\n",
+		    IDPF_RESET_SETTLE_MS, adapter->flags, adapter->state);
+		adapter->flags &= ~(1u << IDPF_HR_RESET_IN_PROG);
+		err = ETIMEDOUT;
+		goto init_err;
+	}
 
 	return (0);
 

@@ -797,6 +797,9 @@ struct idpf_adapter {
          */
         if_ctx_t                        *iflib_ctxs;
 
+	/* Interface being attached, before any vport exists to own it. */
+	if_ctx_t			attach_ctx;
+
         struct virtchnl2_create_vport  **vport_params_recvd;
         uint32_t                        *vport_ids;
 
@@ -928,7 +931,14 @@ idpf_get_reserved_vecs(struct idpf_adapter *adapter)
 static inline uint16_t
 idpf_get_default_vports(struct idpf_adapter *adapter)
 {
-        return le16toh(adapter->caps.default_num_vports);
+	uint16_t nvports = le16toh(adapter->caps.default_num_vports);
+
+	/*
+	 * iflib creates one ifnet per PCI attach and only that vport owns an
+	 * if_ctx_t, so the control plane's larger default cannot be honoured
+	 * without separate device instances this port does not create.
+	 */
+	return (nvports > 1 ? 1 : nvports);
 }
 
 /**
@@ -1286,6 +1296,8 @@ void idpf_attach_and_open(struct idpf_adapter *adapter);
 
 /* Reset and recovery */
 int  idpf_check_reset_complete(struct idpf_adapter *adapter);
+int  idpf_init_hard_reset(struct idpf_adapter *adapter);
+int  idpf_get_vlan_caps(struct idpf_adapter *adapter);
 int  idpf_reset_recover(struct idpf_adapter *adapter);
 bool idpf_is_reset_detected(struct idpf_adapter *adapter);
 

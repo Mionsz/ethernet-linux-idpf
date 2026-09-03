@@ -223,6 +223,8 @@ idpf_ring_delta(uint16_t from, uint16_t to, uint16_t count)
 /* -----------------------------------------------------------------------
  * Vector allocation minimums  [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
+/* The mailbox always occupies MSI-X vector 0; queues start at 1. */
+#define IDPF_MBX_VEC_IDX                0
 #define IDPF_MBX_Q_VEC                  1
 #define IDPF_MIN_Q_VEC                  1
 /*
@@ -384,15 +386,19 @@ idpf_ring_delta(uint16_t from, uint16_t to, uint16_t count)
  * PTYPE constants  [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 #define IDPF_RX_MAX_PTYPE_PROTO_IDS     32
+/*
+ * proto_id is a C99 flexible array, so sizeof() covers none of it; the "- 1"
+ * that suits a trailing [1] member undercounts by one element.
+ */
 #define IDPF_RX_MAX_PTYPE_SZ \
-        (sizeof(struct virtchnl2_ptype) + \
-         (sizeof(uint16_t) * (IDPF_RX_MAX_PTYPE_PROTO_IDS - 1)))
+        struct_size_t(struct virtchnl2_ptype, proto_id, \
+            IDPF_RX_MAX_PTYPE_PROTO_IDS)
 #define IDPF_RX_PTYPE_HDR_SZ    (sizeof(struct virtchnl2_get_ptype_info))
 #define IDPF_RX_MAX_PTYPES_PER_BUF \
         ((IDPF_CTLQ_MAX_BUF_LEN - IDPF_RX_PTYPE_HDR_SZ) / IDPF_RX_MAX_PTYPE_SZ)
 
 #define IDPF_GET_PTYPE_SIZE(p) \
-        (sizeof(*(p)) + sizeof(uint16_t) * ((p)->proto_id_count - 1))
+        struct_size_t(struct virtchnl2_ptype, proto_id, (p)->proto_id_count)
 
 #define IDPF_TUN_IP_GRE ( \
         IDPF_PTYPE_TUNNEL_IP | \

@@ -37,6 +37,11 @@ void idpf_test_kfree(void *ptr);
 /* Outstanding allocations, for leak assertions. */
 long idpf_test_alloc_count(void);
 
+/* Fail every allocation after @n further successes; -1 disables. Covers both
+ * idpf_test_kmalloc() and idpf_alloc_dma_mem(). */
+void idpf_test_fail_alloc_after(int n);
+void idpf_test_alloc_no_fail(void);
+
 #define malloc(size, type, flags)	idpf_test_kmalloc((size), (flags))
 #define free(addr, type)		idpf_test_kfree((addr))
 

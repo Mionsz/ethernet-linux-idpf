@@ -58,6 +58,11 @@ static const char *current_case;
 
 #define EXPECT_NOT_NULL(p)	EXPECT((p) != NULL, "%s is NULL", #p)
 
+#define EXPECT_PTR_EQ(got, want)					\
+	EXPECT((const void *)(got) == (const void *)(want),		\
+	    "%s: got %p want %p", #got, (const void *)(got),		\
+	    (const void *)(want))
+
 /* ------------------------------------------------------------------ */
 /* fixture                                                             */
 
@@ -618,6 +623,282 @@ test_setup_teardown_leaks_nothing(void)
 	EXPECT_EQ(after, before);
 }
 
+/*
+ * idpf_ctlq_recv() detaches the receive buffer and hands it to the caller, so
+ * the buffer has to make it back or the ring starves.  It refills the hole at
+ * next_to_post rather than the slot it was taken from: the ring always keeps
+ * exactly one unposted slot, and next_to_post trails the fill point.
+ */
+static void
+test_post_rx_buffs_round_trip(void)
+{
+	static const uint8_t body[] = { 0xa1, 0xa2, 0xa3, 0xa4 };
+	struct idpf_dma_mem *returned;
+	struct idpf_ctlq_msg msgs[2];
+	struct fixture f;
+	uint16_t n = nitems(msgs);
+	uint16_t count;
+
+	if (fixture_setup(&f) != 0) {
+		EXPECT(false, "fixture setup failed");
+		return;
+	}
+	if (f.arq == NULL)
+		goto out;
+
+	/* Only an indirect message detaches the buffer. */
+	cp_post_reply(&f, 0x1111, 0, body, sizeof(body));
+	EXPECT_OK(idpf_ctlq_recv(f.arq, &n, msgs));
+	EXPECT_EQ(n, 1);
+	if (n != 1)
+		goto out;
+
+	returned = msgs[0].ctx.indirect.payload;
+	EXPECT_NOT_NULL(returned);
+	EXPECT(f.arq->bi.rx_buff[0] == NULL, "buffer still owned by the ring");
+	EXPECT(f.arq->bi.rx_buff[RING_LEN - 1] == NULL,
+	    "expected the unposted slot to be the last one");
+
+	count = 1;
+	EXPECT_OK(idpf_ctlq_post_rx_buffs(&f.hw, f.arq, &count, &returned));
+
+	/* buff_count reports what could NOT be posted. */
+	EXPECT_EQ(count, 0);
+	EXPECT_PTR_EQ(f.arq->bi.rx_buff[RING_LEN - 1], returned);
+
+	/* Slot 0 is now the unposted one, and the doorbell still trails it. */
+	EXPECT(f.arq->bi.rx_buff[0] == NULL, "slot 0 unexpectedly refilled");
+	EXPECT_EQ(f.arq->next_to_post, RING_LEN - 1);
+	EXPECT_EQ(reg_get(&f, ARQ_TAIL), RING_LEN - 1);
+out:
+	fixture_teardown(&f);
+}
+
+/*
+ * Calling post with no buffers can only shuffle a spare along the ring.  After
+ * a receive the sole free buffer is the one the caller is holding, so nothing
+ * can be re-armed until it is handed back - the "post after every receive"
+ * rule in the API comment is not sufficient on its own.
+ */
+static void
+test_post_rx_buffs_without_supplying_any(void)
+{
+	static const uint8_t body[] = { 0xb1, 0xb2 };
+	struct idpf_ctlq_msg msgs[2];
+	struct fixture f;
+	uint16_t n = nitems(msgs);
+	uint16_t before_post;
+	uint16_t count;
+
+	if (fixture_setup(&f) != 0) {
+		EXPECT(false, "fixture setup failed");
+		return;
+	}
+	if (f.arq == NULL)
+		goto out;
+
+	cp_post_reply(&f, 0x2222, 0, body, sizeof(body));
+	EXPECT_OK(idpf_ctlq_recv(f.arq, &n, msgs));
+	EXPECT_EQ(n, 1);
+
+	before_post = f.arq->next_to_post;
+
+	count = 0;
+	EXPECT_OK(idpf_ctlq_post_rx_buffs(&f.hw, f.arq, &count, NULL));
+	EXPECT_EQ(count, 0);
+	EXPECT_EQ(f.arq->next_to_post, before_post);
+	EXPECT(f.arq->bi.rx_buff[0] == NULL, "slot 0 refilled from nowhere");
+
+	/* The driver no longer owns this one. */
+	if (msgs[0].ctx.indirect.payload != NULL)
+		idpf_free_dma_mem(&f.hw, msgs[0].ctx.indirect.payload);
+out:
+	fixture_teardown(&f);
+}
+
+static void
+test_send_multiple_in_one_call(void)
+{
+	struct idpf_ctlq_msg msgs[3];
+	struct fixture f;
+	int i;
+
+	if (fixture_setup(&f) != 0) {
+		EXPECT(false, "fixture setup failed");
+		return;
+	}
+	if (f.asq == NULL)
+		goto out;
+
+	memset(msgs, 0, sizeof(msgs));
+	for (i = 0; i < 3; i++) {
+		msgs[i].opcode = idpf_mbq_opc_send_msg_to_pf;
+		msgs[i].cookie.mbx.chnl_opcode = 0x300 + i;
+	}
+
+	EXPECT_OK(idpf_ctlq_send(&f.hw, f.asq, 3, msgs));
+	EXPECT_EQ(f.asq->next_to_use, 3);
+	EXPECT_EQ(reg_get(&f, ASQ_TAIL), 3);
+
+	for (i = 0; i < 3; i++) {
+		struct idpf_ctlq_desc *d = IDPF_CTLQ_DESC(f.asq, i);
+
+		EXPECT_EQ(le32toh(d->cookie_high), 0x300 + i);
+	}
+out:
+	fixture_teardown(&f);
+}
+
+/*
+ * A payload-less indirect message aborts the batch. Descriptors already
+ * written keep their slots and next_to_use stays advanced, but the tail write
+ * is skipped, so the doorbell lags the driver's own index until the next
+ * successful send. Pinned here because it is surprising rather than obviously
+ * wrong: nothing is published to hardware that was not meant to be.
+ */
+static void
+test_send_partial_failure_leaves_doorbell_behind(void)
+{
+	struct idpf_ctlq_msg msgs[3];
+	struct fixture f;
+	int i;
+
+	if (fixture_setup(&f) != 0) {
+		EXPECT(false, "fixture setup failed");
+		return;
+	}
+	if (f.asq == NULL)
+		goto out;
+
+	memset(msgs, 0, sizeof(msgs));
+	for (i = 0; i < 3; i++)
+		msgs[i].opcode = idpf_mbq_opc_send_msg_to_pf;
+
+	/* Second message claims a payload it does not have. */
+	msgs[1].data_len = 64;
+	msgs[1].ctx.indirect.payload = NULL;
+
+	EXPECT_ERR(idpf_ctlq_send(&f.hw, f.asq, 3, msgs), EBADMSG);
+
+	EXPECT_EQ(f.asq->next_to_use, 1);
+	EXPECT_EQ(reg_get(&f, ASQ_TAIL), 0);
+out:
+	fixture_teardown(&f);
+}
+
+static void
+test_ring_wraps_on_send(void)
+{
+	struct idpf_ctlq_msg *status[RING_LEN];
+	struct idpf_ctlq_msg msg;
+	struct fixture f;
+	uint16_t clean;
+	int i;
+
+	if (fixture_setup(&f) != 0) {
+		EXPECT(false, "fixture setup failed");
+		return;
+	}
+	if (f.asq == NULL)
+		goto out;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.opcode = idpf_mbq_opc_send_msg_to_pf;
+
+	/* Fill, complete and reclaim so the indices are free to wrap. */
+	for (i = 0; i < RING_LEN - 1; i++)
+		EXPECT_OK(idpf_ctlq_send(&f.hw, f.asq, 1, &msg));
+
+	EXPECT_EQ(f.asq->next_to_use, RING_LEN - 1);
+	cp_complete_sends(&f);
+
+	clean = RING_LEN - 1;
+	EXPECT_OK(idpf_ctlq_clean_sq(f.asq, &clean, status));
+	EXPECT_EQ(clean, RING_LEN - 1);
+
+	/* Two more must wrap next_to_use past the end of the ring. */
+	EXPECT_OK(idpf_ctlq_send(&f.hw, f.asq, 1, &msg));
+	EXPECT_EQ(f.asq->next_to_use, 0);
+	EXPECT_EQ(reg_get(&f, ASQ_TAIL), 0);
+
+	EXPECT_OK(idpf_ctlq_send(&f.hw, f.asq, 1, &msg));
+	EXPECT_EQ(f.asq->next_to_use, 1);
+	EXPECT_EQ(reg_get(&f, ASQ_TAIL), 1);
+out:
+	fixture_teardown(&f);
+}
+
+static void
+test_clean_sq_force_reclaims_incomplete(void)
+{
+	struct idpf_ctlq_msg *status[8];
+	struct idpf_ctlq_msg msg;
+	struct fixture f;
+	uint16_t clean;
+	int i;
+
+	if (fixture_setup(&f) != 0) {
+		EXPECT(false, "fixture setup failed");
+		return;
+	}
+	if (f.asq == NULL)
+		goto out;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.opcode = idpf_mbq_opc_send_msg_to_pf;
+
+	for (i = 0; i < 3; i++)
+		EXPECT_OK(idpf_ctlq_send(&f.hw, f.asq, 1, &msg));
+
+	/* Nothing is done, so the ordinary path reclaims none. */
+	clean = nitems(status);
+	idpf_ctlq_clean_sq(f.asq, &clean, status);
+	EXPECT_EQ(clean, 0);
+
+	/* Force ignores DD, which is what teardown after a reset relies on. */
+	clean = nitems(status);
+	EXPECT_OK(idpf_ctlq_clean_sq_force(f.asq, &clean, status));
+	EXPECT_EQ(clean, 3);
+	EXPECT_EQ(f.asq->next_to_clean, 3);
+out:
+	fixture_teardown(&f);
+}
+
+/*
+ * Walk the injected failure through every allocation the mailbox setup makes
+ * and require the count to return to baseline each time. This is the only
+ * check that reaches the unwind ladders inside idpf_ctlq_alloc_ring_res().
+ */
+static void
+test_alloc_failure_unwinds_cleanly(void)
+{
+	long base = idpf_test_alloc_count();
+	struct fixture f;
+	int n, err, reached = 0;
+
+	for (n = 0; n < 64; n++) {
+		idpf_test_fail_alloc_after(n);
+		err = fixture_setup(&f);
+		idpf_test_alloc_no_fail();
+
+		if (err == 0) {
+			/* Past the last allocation setup makes. */
+			fixture_teardown(&f);
+			break;
+		}
+
+		reached++;
+		EXPECT(idpf_test_alloc_count() == base,
+		    "leak of %ld allocation(s) when allocation %d failed",
+		    idpf_test_alloc_count() - base, n);
+		if (idpf_test_alloc_count() != base)
+			break;
+	}
+
+	EXPECT(reached > 0, "no allocation failure was ever injected");
+	EXPECT_EQ(idpf_test_alloc_count(), base);
+}
+
 /* ------------------------------------------------------------------ */
 
 struct test_case {
@@ -642,6 +923,16 @@ static const struct test_case cases[] = {
 	{ "recv_stops_at_first_undelivered",
 	  test_recv_stops_at_first_undelivered },
 	{ "setup_teardown_leaks_nothing", test_setup_teardown_leaks_nothing },
+	{ "post_rx_buffs_round_trip", test_post_rx_buffs_round_trip },
+	{ "post_rx_buffs_without_supplying_any",
+	  test_post_rx_buffs_without_supplying_any },
+	{ "send_multiple_in_one_call", test_send_multiple_in_one_call },
+	{ "send_partial_failure_leaves_doorbell_behind",
+	  test_send_partial_failure_leaves_doorbell_behind },
+	{ "ring_wraps_on_send", test_ring_wraps_on_send },
+	{ "clean_sq_force_reclaims_incomplete",
+	  test_clean_sq_force_reclaims_incomplete },
+	{ "alloc_failure_unwinds_cleanly", test_alloc_failure_unwinds_cleanly },
 };
 
 int

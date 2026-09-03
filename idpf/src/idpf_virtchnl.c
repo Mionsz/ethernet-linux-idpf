@@ -615,8 +615,9 @@ idpf_vc_xn_forward_async(struct idpf_adapter *adapter, struct idpf_vc_xn *xn,
 	if (ctlq_msg->cookie.mbx.chnl_retval != 0) {
 		xn->reply_sz = 0;
 		device_printf(idpf_adapter_to_dev(adapter),
-		    "async message failed (op %u)\n",
-		    ctlq_msg->cookie.mbx.chnl_opcode);
+		    "async message failed (op %u, control plane status %u)\n",
+		    ctlq_msg->cookie.mbx.chnl_opcode,
+		    ctlq_msg->cookie.mbx.chnl_retval);
 		err = EINVAL;
 	}
 
@@ -702,6 +703,11 @@ idpf_vc_xn_forward_reply(struct idpf_adapter *adapter,
 	}
 
 	if (ctlq_msg->cookie.mbx.chnl_retval != 0) {
+		/* The caller only sees EIO, so the reason is logged here. */
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "control plane rejected op %u with status %u\n",
+		    ctlq_msg->cookie.mbx.chnl_opcode,
+		    ctlq_msg->cookie.mbx.chnl_retval);
 		xn->reply_sz = 0;
 		xn->state = IDPF_VC_XN_COMPLETED_FAILED;
 		err = EINVAL;
@@ -3160,12 +3166,18 @@ idpf_send_get_rx_ptype_msg(struct idpf_adapter *adapter)
 
 		reply_sz = idpf_vc_xn_exec(adapter, &xn_params);
 		if (reply_sz < 0) {
-			err = EINVAL;
+			/* Preserve the transaction error rather than masking it. */
+			err = -reply_sz;
 			goto ptype_rel;
 		}
 
 		ptypes_recvd += le16toh(ptype_info->num_ptypes);
 		if ((uint32_t)ptypes_recvd > max_ptype) {
+			device_printf(idpf_adapter_to_dev(adapter),
+			    "ptype: received %d ptypes, more than the %u the "
+			    "driver supports (this reply had %u, reply_sz %zd)\n",
+			    ptypes_recvd, max_ptype,
+			    le16toh(ptype_info->num_ptypes), reply_sz);
 			err = EINVAL;
 			goto ptype_rel;
 		}
@@ -3187,6 +3199,12 @@ idpf_send_get_rx_ptype_msg(struct idpf_adapter *adapter)
 
 			ptype_offset += IDPF_GET_PTYPE_SIZE(ptype);
 			if (ptype_offset > IDPF_CTLQ_MAX_BUF_LEN) {
+				device_printf(idpf_adapter_to_dev(adapter),
+				    "ptype: entry %d of %u ran off the %d byte "
+				    "buffer (offset %d, proto_id_count %u)\n",
+				    i, le16toh(ptype_info->num_ptypes),
+				    IDPF_CTLQ_MAX_BUF_LEN, ptype_offset,
+				    ptype->proto_id_count);
 				err = EINVAL;
 				goto ptype_rel;
 			}
@@ -3195,6 +3213,9 @@ idpf_send_get_rx_ptype_msg(struct idpf_adapter *adapter)
 			if (pt_10 == IDPF_INVALID_PTYPE_ID)
 				goto out;
 			if (pt_10 >= max_ptype) {
+				device_printf(idpf_adapter_to_dev(adapter),
+				    "ptype: entry %d reports id %u, beyond the %u "
+				    "the driver tracks\n", i, pt_10, max_ptype);
 				err = EINVAL;
 				goto ptype_rel;
 			}
@@ -3541,6 +3562,10 @@ restart:
 		}
 	}
 
+	/* The interface being attached owns vport 0. */
+	if (adapter->iflib_ctxs[0] == NULL)
+		adapter->iflib_ctxs[0] = adapter->attach_ctx;
+
 	err = idpf_vport_params_buf_alloc(adapter);
 	if (err != 0) {
 		device_printf(dev,
@@ -3579,9 +3604,9 @@ restart:
 	}
 
 	err = idpf_ptp_init(adapter);
-	if (err != 0)
+	if (err != 0 && err != EOPNOTSUPP)
 		device_printf(dev, "PTP init failed: %d\n", err);
-	else if (idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
+	else if (err == 0 && idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 	    VIRTCHNL2_CAP_TX_CMPL_TSTMP))
 		adapter->tx_compl_tstamp_gran_s =
 		    adapter->caps.tx_cmpl_tstamp_ns_s;

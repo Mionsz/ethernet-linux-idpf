@@ -35,19 +35,19 @@
  *
  * FreeBSD allocates MSI-X vectors as IRQ resources whose rid is the 1-based
  * vector number, so the hardware index the control plane expects is the rid
- * minus one.  This is the equivalent of Linux reading msix_entries[i].entry.
+ * minus one.  Only the mailbox IRQ resource belongs to the driver -- iflib
+ * owns the queue vectors -- so the index is derived rather than read back.
  *
- * Return: the hardware vector index, or -1 when the vector is not allocated.
+ * Return: the hardware vector index, or -1 when the vector is out of range.
  */
 static int
 idpf_adi_hw_vector(struct idpf_adapter *adapter, uint16_t vec_index)
 {
 
-	if (vec_index >= adapter->num_msix_entries ||
-	    adapter->msix_entries[vec_index] == NULL)
+	if (vec_index >= adapter->num_msix_entries)
 		return (-1);
 
-	return (rman_get_rid(adapter->msix_entries[vec_index]) - 1);
+	return (vec_index);
 }
 
 /**

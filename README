@@ -31,3 +31,19 @@ fbsd-user-test.sh	none	no	control queue + simulated control plane
 fbsd-build.sh	none	yes	compiles
 fbsd-kld-test.sh	low	yes	module load/unload, not attach
 fbsd-unit-build.sh	none to build, reboot risk to load	yes	taskqueues, PF device ops, ctlq in kernel context
+
+
+# Rozpakowanie archiwum
+mkdir -p /opt/idpf-ported
+mv idpf.tgz /opt/idpf-ported/idpf.tgz
+cd /opt/idpf-ported/
+tar -xzf idpf.tgz && rm idpf.tgz
+
+
+# Docelowy host freebsd dostepny z maszyny z linuxem:
+export FBSD_HOST=root@10.102.18.118
+
+./scripts/fbsd-build.sh
+./scripts/fbsd-unit-build.sh
+./scripts/fbsd-kld-test.sh
+./scripts/fbsd-user-test.sh

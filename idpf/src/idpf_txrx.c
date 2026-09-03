@@ -528,7 +528,10 @@ init_rxqs:
 			q->rx.rxq_idx = q->idx;
 			q->desc_count = rsrc->rxq_desc_count;
 			q->rx_buf_size = rsrc->bufq_size[0];
-			q->rx_max_pkt_size = if_getmtu(vport->ifp) +
+			/* iflib creates the ifnet after attach_pre returns. */
+			q->rx_max_pkt_size = (vport->ifp != NULL ?
+			    if_getmtu(vport->ifp) :
+			    min(ETHERMTU, vport->max_mtu)) +
 			    IDPF_PACKET_HDR_PAD;
 			q->gen_rxcsum_status = 1;
 			idpf_rxq_set_descids(rsrc, q);
@@ -686,6 +689,13 @@ idpf_vport_queue_alloc_all(struct idpf_vport *vport,
 {
 	uint16_t num_txq, num_rxq;
 	int err;
+
+	/*
+	 * iflib asks for the rings during attach, while the Linux flow only
+	 * built these at open, so this now runs from both paths.
+	 */
+	if (rsrc->txq_grps != NULL)
+		return (0);
 
 	if (idpf_is_queue_model_split(rsrc->txq_model))
 		num_txq = IDPF_DFLT_SPLITQ_TXQ_PER_GROUP;
@@ -927,7 +937,20 @@ idpf_tx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
     int ntxqs, int ntxqsets)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
-	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
+	struct idpf_q_vec_rsrc *rsrc;
+
+	/* iflib can reach here before the vport exists; fail, do not fault. */
+	if (vport == NULL) {
+		device_printf(iflib_get_dev(ctx),
+		    "queue setup before a vport exists\n");
+		return (ENXIO);
+	}
+	rsrc = &vport->dflt_qv_rsrc;
+	if (rsrc->txq_grps == NULL) {
+		device_printf(iflib_get_dev(ctx),
+		    "TX queue structures not allocated\n");
+		return (ENXIO);
+	}
 	bool split = idpf_is_queue_model_split(rsrc->txq_model);
 	int data_ring = split ? 1 : 0;
 	int i;
@@ -986,7 +1009,15 @@ idpf_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
     int nrxqs, int nrxqsets)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
-	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
+	struct idpf_q_vec_rsrc *rsrc;
+
+	/* iflib can reach here before the vport exists; fail, do not fault. */
+	if (vport == NULL) {
+		device_printf(iflib_get_dev(ctx),
+		    "queue setup before a vport exists\n");
+		return (ENXIO);
+	}
+	rsrc = &vport->dflt_qv_rsrc;
 	bool split = idpf_is_queue_model_split(rsrc->rxq_model);
 	int expect = split ? 1 + rsrc->num_bufqs_per_qgrp : 1;
 	int i, j;
@@ -1036,6 +1067,10 @@ void
 idpf_queues_free(if_ctx_t ctx)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
+
+	/* iflib also unwinds through here when attach fails before the vport. */
+	if (vport == NULL)
+		return;
 
 	idpf_vport_queues_rel(vport, &vport->dflt_qv_rsrc);
 }
@@ -1923,6 +1958,14 @@ idpf_vport_intr_rel(struct idpf_q_vec_rsrc *rsrc)
 	for (v_idx = 0; v_idx < rsrc->num_q_vectors; v_idx++) {
 		struct idpf_q_vector *q_vector = &rsrc->q_vectors[v_idx];
 
+		/*
+		 * iflib only frees the legacy interrupt itself; leaving these
+		 * held makes pci_release_msi() fail and leaks the vectors.
+		 */
+		if (q_vector->vport != NULL && q_vector->vport->ctx != NULL)
+			iflib_irq_free(q_vector->vport->ctx,
+			    &q_vector->que_irq);
+
 		free(q_vector->bufq, M_DEVBUF);
 		q_vector->bufq = NULL;
 		free(q_vector->tx, M_DEVBUF);
@@ -1952,6 +1995,10 @@ idpf_vport_intr_alloc(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 
 	if (rsrc->num_q_vectors == 0)
 		return (EINVAL);
+
+	/* Runs from both attach and open; the first caller wins. */
+	if (rsrc->q_vectors != NULL)
+		return (0);
 
 	user_config = &vport->adapter->vport_config[vport->idx]->user_config;
 	if (user_config->q_coalesce == NULL)

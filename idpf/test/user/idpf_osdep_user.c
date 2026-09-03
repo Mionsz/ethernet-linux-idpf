@@ -24,11 +24,48 @@ struct malloc_type M_TEMP[1] = { { "temp" } };
 
 static long alloc_count;
 static long sync_count;
+static int fail_after = -1;
+
+/**
+ * should_fail - decide whether this allocation is the injected failure
+ *
+ * Return: true when the caller should be handed NULL.
+ */
+static bool
+should_fail(void)
+{
+
+	if (fail_after < 0)
+		return (false);
+	if (fail_after == 0)
+		return (true);
+
+	fail_after--;
+
+	return (false);
+}
+
+void
+idpf_test_fail_alloc_after(int n)
+{
+
+	fail_after = n;
+}
+
+void
+idpf_test_alloc_no_fail(void)
+{
+
+	fail_after = -1;
+}
 
 void *
 idpf_test_kmalloc(size_t size, int flags)
 {
 	void *p;
+
+	if (should_fail())
+		return (NULL);
 
 	p = malloc(size);
 	if (p == NULL)
@@ -86,6 +123,9 @@ idpf_alloc_dma_mem(struct idpf_hw *hw __unused, struct idpf_dma_mem *mem,
 {
 	bus_size_t sz = roundup2(size, 4096);
 	void *va = NULL;
+
+	if (should_fail())
+		return (NULL);
 
 	if (posix_memalign(&va, 4096, sz) != 0)
 		return (NULL);

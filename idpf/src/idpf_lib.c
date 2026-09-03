@@ -339,6 +339,8 @@ idpf_intr_rel(struct idpf_adapter *adapter)
 	adapter->msix_entries = NULL;
 }
 
+static void idpf_mb_irq_enable(struct idpf_adapter *adapter);
+
 /**
  * idpf_mb_intr_clean - mailbox interrupt filter
  * @data: adapter
@@ -358,6 +360,7 @@ idpf_mb_intr_clean(void *data)
 		adapter->flags &= ~(1u << IDPF_CORER_IN_PROG);
 		atomic_store_rel_int(&adapter->corer_done_flag, 1);
 		taskqueue_enqueue(adapter->mbx_wq, &adapter->mbx_task);
+		idpf_mb_irq_enable(adapter);
 
 		return (FILTER_HANDLED);
 	}
@@ -376,6 +379,9 @@ idpf_mb_intr_clean(void *data)
 
 	taskqueue_enqueue(adapter->mbx_wq, &adapter->mbx_task);
 	callout_reset(&adapter->serv_task, 1, idpf_service_task, adapter);
+
+	/* Clear the cause and unmask, or the vector re-fires immediately. */
+	idpf_mb_irq_enable(adapter);
 
 	return (FILTER_HANDLED);
 }
@@ -405,7 +411,7 @@ static int
 idpf_mb_intr_req_irq(struct idpf_adapter *adapter)
 {
 	device_t dev = idpf_adapter_to_dev(adapter);
-	const int mb_vidx = 0;
+	const int mb_vidx = IDPF_MBX_VEC_IDX;
 	char *name;
 	int err;
 
@@ -504,17 +510,19 @@ idpf_intr_req(struct idpf_adapter *adapter)
 		goto free_irq;
 	}
 
-	for (i = 0; i < num_lan_vecs; i++) {
-		rid = i + 1;
-		adapter->msix_entries[i] = bus_alloc_resource_any(dev,
-		    SYS_RES_IRQ, &rid, RF_ACTIVE | RF_SHAREABLE);
-		if (adapter->msix_entries[i] == NULL) {
-			device_printf(dev,
-			    "failed to allocate IRQ resource for vector %d\n",
-			    i);
-			err = ENXIO;
-			goto free_msix;
-		}
+	/*
+	 * Only the mailbox vector is claimed here.  iflib allocates the
+	 * per-queue IRQ resources in ifdi_msix_intr_assign(), and claiming
+	 * them first makes that allocation fail with a busy rid.
+	 */
+	rid = IDPF_MBX_VEC_IDX + 1;
+	adapter->msix_entries[IDPF_MBX_VEC_IDX] = bus_alloc_resource_any(dev,
+	    SYS_RES_IRQ, &rid, RF_ACTIVE | RF_SHAREABLE);
+	if (adapter->msix_entries[IDPF_MBX_VEC_IDX] == NULL) {
+		device_printf(dev,
+		    "failed to allocate the mailbox IRQ resource\n");
+		err = ENXIO;
+		goto free_msix;
 	}
 
 	adapter->mb_vector.v_idx = le16toh(adapter->caps.mailbox_vector_id);
@@ -841,6 +849,19 @@ idpf_add_mac_filter(struct idpf_vport *vport, struct idpf_netdev_priv *np,
 	struct idpf_vport_config *vport_config;
 	int err;
 
+	if (np->adapter == NULL || np->adapter->vport_config == NULL ||
+	    np->vport_idx >= np->adapter->max_vports ||
+	    np->adapter->vport_config[np->vport_idx] == NULL) {
+		printf("idpf: mac filter with no vport config "
+		    "(adapter=%p cfgs=%p idx=%u max=%u)\n",
+		    (void *)np->adapter,
+		    np->adapter == NULL ? NULL :
+		    (void *)np->adapter->vport_config,
+		    np->vport_idx,
+		    np->adapter == NULL ? 0 : np->adapter->max_vports);
+		return (ENXIO);
+	}
+
 	vport_config = np->adapter->vport_config[np->vport_idx];
 	err = __idpf_add_mac_filter(vport_config, macaddr);
 	if (err != 0)
@@ -955,9 +976,20 @@ idpf_init_mac_addr(struct idpf_vport *vport, struct idpf_netdev_priv *np)
 	struct idpf_adapter *adapter = vport->adapter;
 	int err;
 
+	device_printf(idpf_adapter_to_dev(adapter),
+	    "mac: %02x:%02x:%02x:%02x:%02x:%02x valid=%d cfg=%p\n",
+	    vport->default_mac_addr[0], vport->default_mac_addr[1],
+	    vport->default_mac_addr[2], vport->default_mac_addr[3],
+	    vport->default_mac_addr[4], vport->default_mac_addr[5],
+	    idpf_is_valid_ether_addr(vport->default_mac_addr),
+	    (void *)(np->adapter == NULL ? NULL :
+	    np->adapter->vport_config[np->vport_idx]));
+
 	if (idpf_is_valid_ether_addr(vport->default_mac_addr))
 		return (idpf_add_mac_filter(vport, np,
 		    vport->default_mac_addr, false));
+
+	device_printf(idpf_adapter_to_dev(adapter), "mac: generating\n");
 
 	if (!idpf_is_cap_ena(adapter, IDPF_OTHER_CAPS,
 	    VIRTCHNL2_CAP_MACFILTER)) {
@@ -1323,6 +1355,8 @@ idpf_vport_rel(struct idpf_vport *vport)
 
 	idpf_send_destroy_vport_msg(adapter, vport->vport_id);
 
+	idpf_ptp_release_vport_tstamps_caps(vport);
+
 	/* Return the queue budget to the adapter's pool. */
 	max_q.max_rxq = vport_config->max_q.max_rxq;
 	max_q.max_txq = vport_config->max_q.max_txq;
@@ -1401,8 +1435,12 @@ idpf_vport_alloc(struct idpf_adapter *adapter, struct idpf_vport_max_q *max_q)
 	uint16_t num_max_q;
 	int i, err;
 
-	if (idx == IDPF_NO_FREE_SLOT)
+	if (idx == IDPF_NO_FREE_SLOT) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "vport alloc: no free slot (alloc %u of max %u)\n",
+		    adapter->num_alloc_vports, adapter->max_vports);
 		return (NULL);
+	}
 
 	vport = malloc(sizeof(*vport), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (vport == NULL)
@@ -1446,6 +1484,10 @@ idpf_vport_alloc(struct idpf_adapter *adapter, struct idpf_vport_max_q *max_q)
 
 	vport->idx = idx;
 	vport->adapter = adapter;
+	/* Every vport is driven through an iflib interface; without this the
+	 * ifp helpers dereference NULL. */
+	vport->ctx = adapter->iflib_ctxs != NULL ?
+	    adapter->iflib_ctxs[idx] : NULL;
 	vport->compln_clean_budget = IDPF_TX_COMPLQ_CLEAN_BUDGET;
 	vport->default_vport = adapter->num_alloc_vports <
 	    idpf_get_default_vports(adapter);
@@ -1461,8 +1503,11 @@ idpf_vport_alloc(struct idpf_adapter *adapter, struct idpf_vport_max_q *max_q)
 		goto free_vport;
 
 	err = idpf_vport_init(vport, max_q);
-	if (err != 0)
+	if (err != 0) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "vport alloc: idpf_vport_init failed: %d\n", err);
 		goto free_vector_idxs;
+	}
 
 	/*
 	 * The key is allocated separately from the LUT: a queue-count change
@@ -1733,6 +1778,9 @@ idpf_init_task(void *arg, int pending __unused)
 	bool default_vport;
 	int index, err;
 
+	device_printf(dev, "init_task: entered (alloc %u)\n",
+	    adapter->num_alloc_vports);
+
 	num_default_vports = idpf_get_default_vports(adapter);
 	default_vport = adapter->num_alloc_vports < num_default_vports;
 
@@ -1740,6 +1788,7 @@ idpf_init_task(void *arg, int pending __unused)
 	if (err != 0)
 		goto unwind_vports;
 
+	device_printf(dev, "init_task: creating vport\n");
 	err = idpf_send_create_vport_msg(adapter, &max_q);
 	if (err != 0) {
 		idpf_vport_dealloc_max_qs(adapter, &max_q);
@@ -1760,6 +1809,8 @@ idpf_init_task(void *arg, int pending __unused)
 		goto unwind_vports;
 	}
 
+	device_printf(dev, "init_task: vport %u created, configuring\n",
+	    vport->vport_id);
 	err = idpf_vport_cfg_ifp(vport);
 	if (err != 0)
 		goto unwind_vports;
@@ -1930,7 +1981,7 @@ idpf_wait_on_reset_detection(struct idpf_adapter *adapter)
  *
  * Return: 0 on success, otherwise an errno.
  */
-static int
+int
 idpf_init_hard_reset(struct idpf_adapter *adapter)
 {
 	struct idpf_reg_ops *reg_ops = &adapter->dev_ops.reg_ops;
@@ -2144,7 +2195,7 @@ free_vport:
  *
  * Return: the IFCAP_* bits to advertise.
  */
-static int
+int
 idpf_get_vlan_caps(struct idpf_adapter *adapter)
 {
 	struct virtchnl2_vlan_supported_caps *insert, *strip;
@@ -2159,7 +2210,8 @@ idpf_get_vlan_caps(struct idpf_adapter *adapter)
 	    (le32toh(insert->outer) & VIRTCHNL2_VLAN_ETHERTYPE_8100) == 0)
 		return (0);
 
-	return (IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_HWFILTER);
+	/* VLAN_MTU: a tagged frame is 4 bytes over the configured MTU. */
+	return (IFCAP_VLAN_HWTAGGING | IFCAP_VLAN_HWFILTER | IFCAP_VLAN_MTU);
 }
 
 /**
@@ -2180,15 +2232,27 @@ idpf_vport_cfg_ifp(struct idpf_vport *vport)
 	int caps = 0;
 	int err;
 
+	if (vport->ctx == NULL) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "vport %u has no iflib context\n", vport->idx);
+		return (ENXIO);
+	}
+
+	device_printf(idpf_adapter_to_dev(adapter), "cfg_ifp: softc\n");
 	np = iflib_get_softc(vport->ctx);
 	np->vport = vport;
 	np->vport_idx = vport->idx;
 	np->vport_id = vport->vport_id;
 	np->tx_max_bufs = idpf_get_max_tx_bufs(adapter);
 
+	device_printf(idpf_adapter_to_dev(adapter), "cfg_ifp: mac\n");
 	err = idpf_init_mac_addr(vport, np);
-	if (err != 0)
+	if (err != 0) {
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "cfg_ifp: mac failed %d\n", err);
 		return (err);
+	}
+	device_printf(idpf_adapter_to_dev(adapter), "cfg_ifp: caps\n");
 
 	/*
 	 * RSS has no IFCAP bit on FreeBSD: it is not user-toggleable, so the
@@ -2209,6 +2273,16 @@ idpf_vport_cfg_ifp(struct idpf_vport *vport)
 
 	caps |= idpf_get_vlan_caps(adapter);
 	caps |= IFCAP_JUMBO_MTU | IFCAP_HWSTATS;
+
+	/*
+	 * During attach the vport is created before iflib builds the ifnet, so
+	 * the capabilities are published from ifdi_attach_post() instead; the
+	 * same values are recomputed there.
+	 */
+	device_printf(idpf_adapter_to_dev(adapter),
+	    "cfg_ifp: ifp=%p caps=0x%x\n", (void *)ifp, caps);
+	if (ifp == NULL)
+		return (0);
 
 	if_setcapabilities(ifp, caps);
 	if_setcapenable(ifp, caps);
@@ -2328,6 +2402,9 @@ idpf_if_msix_intr_assign(if_ctx_t ctx, int msix __unused)
 		return (ENXIO);
 
 	rsrc = &vport->dflt_qv_rsrc;
+
+	if (rsrc->q_vectors == NULL || rsrc->q_vector_idxs == NULL)
+		return (ENXIO);
 
 	for (i = 0; i < rsrc->num_q_vectors; i++) {
 		rid = rsrc->q_vector_idxs[i] + 1;
