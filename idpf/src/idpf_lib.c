@@ -1998,6 +1998,37 @@ idpf_deinit_task(struct idpf_adapter *adapter)
  * --------------------------------------------------------------------- */
 
 /**
+ * idpf_wait_for_func_reset - wait out the reset triggered on the way out
+ * @adapter: driver private data
+ *
+ * idpf_check_reset_complete() deliberately gives up as soon as
+ * IDPF_REMOVE_IN_PROG is set, which detach sets before it triggers its
+ * reset.  Reloading the driver while that reset is still in flight faults
+ * in the next attach, so wait for it here without honouring that flag.
+ */
+void
+idpf_wait_for_func_reset(struct idpf_adapter *adapter)
+{
+	int i;
+
+	if (adapter->reset_reg.rstat == NULL)
+		return;
+
+	for (i = 0; i < IDPF_RESET_POLL_COUNT; i++) {
+		uint32_t reg_val = idpf_reg_rd32(adapter->reset_reg.rstat);
+
+		if (reg_val != 0xFFFFFFFF &&
+		    (reg_val & adapter->reset_reg.rstat_m) != 0)
+			return;
+
+		DELAY(5000);
+	}
+
+	device_printf(idpf_adapter_to_dev(adapter),
+	    "device still in reset at detach; a reload may be delayed\n");
+}
+
+/**
  * idpf_check_reset_complete - wait for the device to leave reset
  * @adapter: driver private data
  *

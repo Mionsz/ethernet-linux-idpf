@@ -783,6 +783,7 @@ idpf_if_detach(if_ctx_t ctx)
 
 	/* Leave the device clean for whoever attaches next. */
 	adapter->dev_ops.reg_ops.trigger_reset(adapter, IDPF_HR_FUNC_RESET);
+	idpf_wait_for_func_reset(adapter);
 	idpf_deinit_dflt_mbx(adapter);
 
 	callout_drain(&adapter->serv_task);

@@ -1338,6 +1338,7 @@ void idpf_detach_and_close(struct idpf_adapter *adapter);
 void idpf_attach_and_open(struct idpf_adapter *adapter);
 
 /* Reset and recovery */
+void idpf_wait_for_func_reset(struct idpf_adapter *adapter);
 int  idpf_check_reset_complete(struct idpf_adapter *adapter);
 int  idpf_init_hard_reset(struct idpf_adapter *adapter);
 int  idpf_get_vlan_caps(struct idpf_adapter *adapter);
