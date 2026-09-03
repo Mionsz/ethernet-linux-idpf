@@ -2357,6 +2357,7 @@ idpf_if_init(if_ctx_t ctx)
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 	struct idpf_adapter *adapter = np->adapter;
 	struct idpf_vport *vport = np->vport;
+	int err;
 
 	if (vport == NULL)
 		return;
@@ -2365,7 +2366,19 @@ idpf_if_init(if_ctx_t ctx)
 		return;
 
 	idpf_vport_ctrl_lock(adapter);
-	idpf_vport_open(vport);
+	err = idpf_vport_open(vport);
+	if (err != 0) {
+		/*
+		 * iflib arms the datapath as soon as this returns, so a failed
+		 * open has to leave the interface down rather than let the
+		 * rings be refilled against a half-configured vport.
+		 */
+		device_printf(idpf_adapter_to_dev(adapter),
+		    "failed to open vport %u: %d\n", vport->vport_id, err);
+		idpf_vport_ctrl_unlock(adapter);
+		if_setdrvflagbits(iflib_get_ifp(ctx), 0, IFF_DRV_RUNNING);
+		return;
+	}
 	idpf_apply_capabilities(vport);
 	idpf_vport_ctrl_unlock(adapter);
 }

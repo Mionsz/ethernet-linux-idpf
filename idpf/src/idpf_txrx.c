@@ -1902,16 +1902,35 @@ static void
 idpf_isc_rxd_refill(void *arg, if_rxd_update_t iru)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(arg);
-	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
+	struct idpf_q_vec_rsrc *rsrc;
+	struct idpf_queue *q;
+
+	/*
+	 * ifdi_init() returns void, so iflib refills even when the vport
+	 * failed to open.  Refuse rather than write through a ring that was
+	 * never handed to the driver.
+	 */
+	if (vport == NULL)
+		return;
+
+	rsrc = &vport->dflt_qv_rsrc;
+	if (rsrc->rxq_grps == NULL)
+		return;
 
 	if (!idpf_is_queue_model_split(rsrc->rxq_model)) {
-		idpf_rx_singleq_refill(idpf_rxq(rsrc, iru->iru_qsidx), iru);
+		q = idpf_rxq(rsrc, iru->iru_qsidx);
+		if (q == NULL || q->desc_ring == NULL)
+			return;
+		idpf_rx_singleq_refill(q, iru);
 		return;
 	}
 
 	MPASS(iru->iru_flidx < rsrc->num_bufqs_per_qgrp);
-	idpf_rx_splitq_refill(idpf_bufq(rsrc, iru->iru_qsidx, iru->iru_flidx),
-	    iru);
+	q = idpf_bufq(rsrc, iru->iru_qsidx, iru->iru_flidx);
+	if (q == NULL || q->desc_ring == NULL)
+		return;
+
+	idpf_rx_splitq_refill(q, iru);
 }
 
 /**
@@ -1929,16 +1948,29 @@ static void
 idpf_isc_rxd_flush(void *arg, uint16_t rxqid, uint8_t flid, qidx_t pidx)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(arg);
-	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
+	struct idpf_q_vec_rsrc *rsrc;
 	struct idpf_queue *q;
 	uint32_t tail;
 
+	/* Reached from the same unconditional iflib path as the refill. */
+	if (vport == NULL)
+		return;
+
+	rsrc = &vport->dflt_qv_rsrc;
+	if (rsrc->rxq_grps == NULL)
+		return;
+
 	if (!idpf_is_queue_model_split(rsrc->rxq_model)) {
-		idpf_rx_buf_hw_update(idpf_rxq(rsrc, rxqid), pidx);
+		q = idpf_rxq(rsrc, rxqid);
+		if (q == NULL || q->tail == NULL)
+			return;
+		idpf_rx_buf_hw_update(q, pidx);
 		return;
 	}
 
 	q = idpf_bufq(rsrc, rxqid, flid);
+	if (q == NULL || q->tail == NULL)
+		return;
 	tail = rounddown(pidx, IDPF_RX_BUF_POST_STRIDE);
 	if (tail == q->next_to_use)
 		return;
@@ -2459,15 +2491,22 @@ idpf_init_rss(struct idpf_vport *vport, struct idpf_rss_data *rss_data,
 
 	lut_size = rss_data->rss_lut_size * sizeof(*rss_data->rss_lut);
 
-	rss_data->rss_lut = malloc(lut_size, M_DEVBUF, M_NOWAIT | M_ZERO);
-	if (rss_data->rss_lut == NULL)
-		return (ENOMEM);
+	/* Runs again on every open, but the tables are allocated only once. */
+	if (rss_data->rss_lut == NULL) {
+		rss_data->rss_lut = malloc(lut_size, M_DEVBUF,
+		    M_NOWAIT | M_ZERO);
+		if (rss_data->rss_lut == NULL)
+			return (ENOMEM);
+	}
 
-	rss_data->cached_lut = malloc(lut_size, M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (rss_data->cached_lut == NULL) {
-		free(rss_data->rss_lut, M_DEVBUF);
-		rss_data->rss_lut = NULL;
-		return (ENOMEM);
+		rss_data->cached_lut = malloc(lut_size, M_DEVBUF,
+		    M_NOWAIT | M_ZERO);
+		if (rss_data->cached_lut == NULL) {
+			free(rss_data->rss_lut, M_DEVBUF);
+			rss_data->rss_lut = NULL;
+			return (ENOMEM);
+		}
 	}
 
 	idpf_fill_dflt_rss_lut(rss_data, rsrc);
