@@ -745,6 +745,7 @@ idpf_if_attach_post(if_ctx_t ctx)
 	    IDPF_DRV_VER);
 
 	idpf_ptp_sysctl_init(adapter);
+	idpf_stats_sysctl_init(adapter);
 
 	return (0);
 }

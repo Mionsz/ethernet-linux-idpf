@@ -1361,5 +1361,6 @@ void idpf_vport_set_hsplit(struct idpf_vport *vport, bool ena);
 /* Statistics task control */
 void idpf_stats_task_stop(struct idpf_adapter *adapter);
 void idpf_stats_task_start(struct idpf_adapter *adapter);
+void idpf_stats_sysctl_init(struct idpf_adapter *adapter);
 
 #endif /* !_IDPF_H_ */

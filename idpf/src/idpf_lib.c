@@ -1676,6 +1676,92 @@ idpf_statistics_task_cb(void *arg)
 }
 
 /**
+ * idpf_sysctl_vport_stat - report one control-plane counter
+ *
+ * arg1 is the adapter, arg2 the byte offset of the counter within
+ * struct virtchnl2_vport_stats.
+ */
+static int
+idpf_sysctl_vport_stat(SYSCTL_HANDLER_ARGS)
+{
+	struct idpf_adapter *adapter = arg1;
+	size_t off = (size_t)arg2;
+	struct idpf_vport *vport;
+	uint64_t val = 0;
+
+	if (adapter == NULL || adapter->vports == NULL)
+		return (ENXIO);
+
+	vport = adapter->vports[0];
+	if (vport == NULL)
+		return (ENXIO);
+
+	mtx_lock(&vport->port_stats.stats_lock);
+	memcpy(&val, (const char *)&vport->port_stats.vport_stats + off,
+	    sizeof(val));
+	mtx_unlock(&vport->port_stats.stats_lock);
+	val = le64toh(val);
+
+	return (sysctl_handle_64(oidp, &val, 0, req));
+}
+
+/**
+ * idpf_stats_sysctl_init - publish the control-plane counters
+ * @adapter: driver private data
+ *
+ * These come from the device rather than the host stack, so they show
+ * wire activity that never reaches an ifnet counter.
+ */
+void
+idpf_stats_sysctl_init(struct idpf_adapter *adapter)
+{
+	struct sysctl_oid *node;
+	struct sysctl_ctx_list *ctx;
+	struct sysctl_oid_list *list;
+	device_t dev;
+	unsigned int i;
+	static const struct {
+		const char *name;
+		size_t off;
+		const char *desc;
+	} stats[] = {
+#define	IDPF_VPSTAT(f, d)	\
+	{ #f, __offsetof(struct virtchnl2_vport_stats, f), d }
+		IDPF_VPSTAT(rx_bytes, "bytes received"),
+		IDPF_VPSTAT(rx_unicast, "unicast packets received"),
+		IDPF_VPSTAT(rx_multicast, "multicast packets received"),
+		IDPF_VPSTAT(rx_broadcast, "broadcast packets received"),
+		IDPF_VPSTAT(rx_discards, "packets discarded on receive"),
+		IDPF_VPSTAT(rx_errors, "receive errors"),
+		IDPF_VPSTAT(tx_bytes, "bytes transmitted"),
+		IDPF_VPSTAT(tx_unicast, "unicast packets transmitted"),
+		IDPF_VPSTAT(tx_multicast, "multicast packets transmitted"),
+		IDPF_VPSTAT(tx_broadcast, "broadcast packets transmitted"),
+		IDPF_VPSTAT(tx_discards, "packets discarded on transmit"),
+		IDPF_VPSTAT(tx_errors, "transmit errors"),
+#undef	IDPF_VPSTAT
+	};
+
+	if (adapter == NULL)
+		return;
+
+	dev = idpf_adapter_to_dev(adapter);
+	ctx = device_get_sysctl_ctx(dev);
+	node = SYSCTL_ADD_NODE(ctx,
+	    SYSCTL_CHILDREN(device_get_sysctl_tree(dev)), OID_AUTO, "stats",
+	    CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "control plane counters");
+	if (node == NULL)
+		return;
+	list = SYSCTL_CHILDREN(node);
+
+	for (i = 0; i < nitems(stats); i++)
+		SYSCTL_ADD_PROC(ctx, list, OID_AUTO, stats[i].name,
+		    CTLTYPE_U64 | CTLFLAG_RD | CTLFLAG_MPSAFE, adapter,
+		    stats[i].off, idpf_sysctl_vport_stat, "QU",
+		    stats[i].desc);
+}
+
+/**
  * idpf_stats_task_stop - cancel the statistics task
  * @adapter: driver private data
  */
