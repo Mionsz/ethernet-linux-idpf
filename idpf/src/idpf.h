@@ -88,15 +88,15 @@
 #define IDPF_DRVCMD_GET_TSTAMP_CONFIG	1
 
 struct idpf_drv_info {
-	uint32_t	vport_id;
-	uint32_t	link_speed_mbps;
-	uint16_t	num_txq;
-	uint16_t	num_rxq;
-	uint16_t	num_q_vectors;
-	uint8_t		link_up;
-	uint8_t		link_known;
-	uint8_t		mac[ETHER_ADDR_LEN];
-	uint8_t		pad[2];
+	u32	vport_id;
+	u32	link_speed_mbps;
+	u16	num_txq;
+	u16	num_rxq;
+	u16	num_q_vectors;
+	u8		link_up;
+	u8		link_known;
+	u8		mac[ETHER_ADDR_LEN];
+	u8		pad[2];
 };
 
 /*
@@ -104,10 +104,10 @@ struct idpf_drv_info {
  * through SIOCGDRVSPEC rather than the Linux ioctl pair.
  */
 struct idpf_tstamp_config {
-	uint32_t	capable;	/* control plane offers PTP at all */
+	u32	capable;	/* control plane offers PTP at all */
 	int32_t		tx_type;	/* 0 off, 1 on */
 	int32_t		rx_filter;	/* 0 none, 1 all */
-	uint32_t	flags;
+	u32	flags;
 };
 
 #ifdef IDPF_DEBUG
@@ -135,7 +135,7 @@ struct idpf_rss_data;
  * Driver identity
  * ----------------------------------------------------------------------- */
 #define IDPF_DRV_NAME   "idpf"
-#define IDPF_DRV_VER    "1.0.15"
+#define IDPF_DRV_VER    "0.1.0"
 
 /* Bit-field helper — protocol-internal, retained from Linux baseline. */
 #define IDPF_M(m, s)    ((m) << (s))
@@ -250,7 +250,7 @@ struct idpf_rss_data;
  * ----------------------------------------------------------------------- */
 struct idpf_mac_filter {
         TAILQ_ENTRY(idpf_mac_filter) list;
-        uint8_t  macaddr[ETHER_ADDR_LEN];
+        u8  macaddr[ETHER_ADDR_LEN];
         bool     remove;
         bool     add;
 };
@@ -267,9 +267,9 @@ enum idpf_state {
 };
 
 /* -----------------------------------------------------------------------
- * enum idpf_flags — adapter-level flags stored in adapter->flags (uint32_t).
+ * enum idpf_flags — adapter-level flags stored in adapter->flags (u32).
  *
- * Linux DECLARE_BITMAP replaced by plain uint32_t bit positions.
+ * Linux DECLARE_BITMAP replaced by plain u32 bit positions.
  * Use (adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) etc.
  * [FBSD15:A32] [LOCAL:A21]
  * ----------------------------------------------------------------------- */
@@ -282,11 +282,11 @@ enum idpf_flags {
         IDPF_VC_CORE_INIT,
         IDPF_CORER_IN_PROG,
         IDPF_PCI_CB_RESET,
-        IDPF_FLAGS_NBITS,       /* must be last; must fit in uint32_t */
+        IDPF_FLAGS_NBITS,       /* must be last; must fit in u32 */
 };
 
 _Static_assert(IDPF_FLAGS_NBITS <= 32,
-    "idpf_flags exceeds uint32_t width");
+    "idpf_flags exceeds u32 width");
 
 /* -----------------------------------------------------------------------
  * enum idpf_cap_field — offsets into virtchnl2_get_capabilities
@@ -310,7 +310,7 @@ enum idpf_cap_field {
 
 /* -----------------------------------------------------------------------
  * enum idpf_vport_state — per-vport state bits stored in vport->state
- * (uint32_t, same pattern as adapter->flags).
+ * (u32, same pattern as adapter->flags).
  * [LOCAL:A20]
  * ----------------------------------------------------------------------- */
 enum idpf_vport_state {
@@ -319,7 +319,7 @@ enum idpf_vport_state {
 };
 
 _Static_assert(IDPF_VPORT_STATE_NBITS <= 32,
-    "idpf_vport_state exceeds uint32_t width");
+    "idpf_vport_state exceeds u32 width");
 
 /* -----------------------------------------------------------------------
  * struct idpf_netdev_priv — per-vport back-pointer stored in iflib ctx.
@@ -327,17 +327,17 @@ _Static_assert(IDPF_VPORT_STATE_NBITS <= 32,
  * net_device removed; FreeBSD uses if_ctx_t / struct ifnet *.
  * spinlock_t replaced by struct mtx.
  * rtnl_link_stats64 replaced by struct if_data (FreeBSD per-interface stats).
- * DECLARE_BITMAP replaced by uint32_t.
+ * DECLARE_BITMAP replaced by u32.
  * [FBSD15:A30] [FBSD15:A32] [LOCAL:A20-A21]
  * ----------------------------------------------------------------------- */
 struct idpf_netdev_priv {
         struct idpf_adapter     *adapter;
         struct idpf_vport       *vport;
-        uint32_t                 vport_id;
-        uint32_t                 link_speed_mbps;
-        uint16_t                 vport_idx;
-        uint32_t                 state;         /* idpf_vport_state bits */
-        uint16_t                 tx_max_bufs;
+        u32                 vport_id;
+        u32                 link_speed_mbps;
+        u16                 vport_idx;
+        u32                 state;         /* idpf_vport_state bits */
+        u16                 tx_max_bufs;
         struct mtx               stats_lock;    /* protects netstats */
         struct if_data           netstats;      /* [FBSD15:A30] */
 };
@@ -351,18 +351,18 @@ struct idpf_netdev_priv {
 struct idpf_reset_reg {
         void    *rstat;         /* mapped reset-status register address */
         void    *oicr_cause;    /* mapped OICR cause register address */
-        uint32_t rstat_m;
-        uint32_t oicr_cause_m;
+        u32 rstat_m;
+        u32 oicr_cause_m;
 };
 
 /* -----------------------------------------------------------------------
  * struct idpf_vport_max_q — queue count limits per vport  [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 struct idpf_vport_max_q {
-        uint16_t max_rxq;
-        uint16_t max_txq;
-        uint16_t max_bufq;
-        uint16_t max_complq;
+        u16 max_rxq;
+        u16 max_txq;
+        u16 max_bufq;
+        u16 max_complq;
 };
 
 /* -----------------------------------------------------------------------
@@ -386,7 +386,7 @@ struct idpf_reg_ops {
          * read_master_time / ptp_reg_init: CONDITIONAL (feature 217).
          * May be NULL when PTP is not negotiated.  [ON_HOLD — see §23.4]
          */
-        uint64_t (*read_master_time)(const struct idpf_hw *hw);
+        u64 (*read_master_time)(const struct idpf_hw *hw);
         void     (*ptp_reg_init)(const struct idpf_adapter *adapter);
 };
 
@@ -406,7 +406,7 @@ struct idpf_dev_ops {
          * May be NULL when ADI is not negotiated.
          */
         void (*notify_adi_reset)(struct idpf_adapter *adapter,
-                                 uint16_t adi_id, bool reset);
+                                 u16 adi_id, bool reset);
 
         struct idpf_reg_ops reg_ops;
 
@@ -439,7 +439,7 @@ enum idpf_vport_reset_cause {
 
 /* -----------------------------------------------------------------------
  * enum idpf_vport_flags — per-vport flag bits (stored in vport->flags,
- * uint32_t).  [LOCAL:A20]
+ * u32).  [LOCAL:A20]
  * ----------------------------------------------------------------------- */
 enum idpf_vport_flags {
         IDPF_VPORT_DEL_QUEUES,
@@ -448,38 +448,38 @@ enum idpf_vport_flags {
 };
 
 _Static_assert(IDPF_VPORT_FLAGS_NBITS <= 32,
-    "idpf_vport_flags exceeds uint32_t width");
+    "idpf_vport_flags exceeds u32 width");
 
 /* -----------------------------------------------------------------------
  * struct idpf_port_stats — per-vport statistics.
  *
- * u64_stats_sync removed (Linux-only); counters are plain uint64_t.
+ * u64_stats_sync removed (Linux-only); counters are plain u64.
  * A single stats_lock (struct mtx) protects the entire struct.
  * CONFIG_UPLINK_PORT_STATS and IDPF_ADD_PROBES blocks removed.
  * [FBSD15:A32] [LOCAL:A20]
  * ----------------------------------------------------------------------- */
 struct idpf_port_stats {
         struct mtx                      stats_lock;     /* [FBSD15:A32] */
-        uint64_t                        rx_hw_csum_err;
-        uint64_t                        rx_hsplit;
-        uint64_t                        rx_hsplit_hbo;
-        uint64_t                        rx_bad_descs;
-        uint64_t                        tx_linearize;
-        uint64_t                        tx_busy;
-        uint64_t                        tx_drops;
-        uint64_t                        tx_dma_map_errs;
-        uint64_t                        tx_reinjection_timeouts;
+        u64                        rx_hw_csum_err;
+        u64                        rx_hsplit;
+        u64                        rx_hsplit_hbo;
+        u64                        rx_bad_descs;
+        u64                        tx_linearize;
+        u64                        tx_busy;
+        u64                        tx_drops;
+        u64                        tx_dma_map_errs;
+        u64                        tx_reinjection_timeouts;
         struct virtchnl2_vport_stats    vport_stats;    /* [IDPF:A13-A14] */
-        uint64_t                        tx_lso_pkts;
-        uint64_t                        tx_lso_bytes;
-        uint64_t                        tx_lso_segs_tot;
-        uint64_t                        rx_page_recycles;
-        uint64_t                        rx_page_reallocs;
-        uint64_t                        rx_rsc_pkts;
-        uint64_t                        rx_rsc_bytes;
-        uint64_t                        rx_rsc_segs_tot;
-        uint64_t                        lso_seg[IDPF_MAX_SEGS];
-        uint64_t                        rsc_seg[IDPF_MAX_SEGS];
+        u64                        tx_lso_pkts;
+        u64                        tx_lso_bytes;
+        u64                        tx_lso_segs_tot;
+        u64                        rx_page_recycles;
+        u64                        rx_page_reallocs;
+        u64                        rx_rsc_pkts;
+        u64                        rx_rsc_bytes;
+        u64                        rx_rsc_segs_tot;
+        u64                        lso_seg[IDPF_MAX_SEGS];
+        u64                        rsc_seg[IDPF_MAX_SEGS];
 };
 
 /* -----------------------------------------------------------------------
@@ -491,27 +491,27 @@ struct idpf_port_stats {
 struct idpf_q_vec_rsrc {
         device_t                 dev;           /* [FBSD15:A30] */
         struct idpf_q_vector    *q_vectors;
-        uint16_t                *q_vector_idxs;
-        uint16_t                 num_q_vectors;
+        u16                *q_vector_idxs;
+        u16                 num_q_vectors;
 
         struct idpf_txq_group   *txq_grps;
-        uint32_t                 txq_desc_count;
-        uint32_t                 complq_desc_count;
-        uint32_t                 txq_model;
-        uint16_t                 num_txq;
-        uint16_t                 num_complq;
-        uint16_t                 num_txq_grp;
+        u32                 txq_desc_count;
+        u32                 complq_desc_count;
+        u32                 txq_model;
+        u16                 num_txq;
+        u16                 num_complq;
+        u16                 num_txq_grp;
 
-        uint16_t                 num_rxq_grp;
-        uint32_t                 rxq_model;
+        u16                 num_rxq_grp;
+        u32                 rxq_model;
         struct idpf_rxq_group   *rxq_grps;
-        uint16_t                 num_rxq;
-        uint16_t                 num_bufq;
-        uint32_t                 rxq_desc_count;
-        uint32_t                 bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ_GRP];
-        uint8_t                  num_bufqs_per_qgrp;
+        u16                 num_rxq;
+        u16                 num_bufq;
+        u32                 rxq_desc_count;
+        u32                 bufq_desc_count[IDPF_MAX_BUFQS_PER_RXQ_GRP];
+        u8                  num_bufqs_per_qgrp;
         bool                     base_rxd;
-        uint32_t                 bufq_size[IDPF_MAX_BUFQS_PER_RXQ_GRP];
+        u32                 bufq_size[IDPF_MAX_BUFQS_PER_RXQ_GRP];
 };
 
 /* -----------------------------------------------------------------------
@@ -529,7 +529,7 @@ struct idpf_fsteer_fltr {
          * once feature 239 (sideband flow steering) contract is approved.
          * [CONDITIONAL — feature 239]
          */
-        uint8_t  fs_opaque[64];         /* placeholder; do not decode */
+        u8  fs_opaque[64];         /* placeholder; do not decode */
 };
 
 /* -----------------------------------------------------------------------
@@ -538,7 +538,7 @@ struct idpf_fsteer_fltr {
  * XDP fields removed (XDP not in scope).
  * IIDC/RDMA vdev_info removed (DELEGATED).
  * net_device replaced by if_ctx_t (iflib context) and struct ifnet *.
- * DECLARE_BITMAP replaced by uint32_t.
+ * DECLARE_BITMAP replaced by u32.
  * wait_queue_head_t replaced by struct cv + struct mtx (sw_marker_cv /
  *   sw_marker_lock) for the software-marker drain wait.
  * hwtstamp_config / tstamp_task / tstamp_stats removed (PTP CONDITIONAL).
@@ -549,9 +549,9 @@ struct idpf_fsteer_fltr {
 struct idpf_vport {
         struct idpf_q_vec_rsrc   dflt_qv_rsrc;
         struct idpf_queue      **txqs;          /* fast-path TX queue array */
-        uint16_t                 num_txq;
-        uint16_t                 tw_ts_gran_s;
-        uint64_t                 tw_horizon;
+        u16                 num_txq;
+        u16                 tw_ts_gran_s;
+        u64                 tw_horizon;
 
         struct idpf_adapter     *adapter;
 
@@ -564,16 +564,16 @@ struct idpf_vport {
         if_ctx_t                 ctx;
         struct ifnet            *ifp;
 
-        uint32_t                 flags;         /* idpf_vport_flags bits */
-        uint32_t                 compln_clean_budget;
-        uint32_t                 vport_id;
-        uint16_t                 vport_type;
-        uint16_t                 idx;
+        u32                 flags;         /* idpf_vport_flags bits */
+        u32                 compln_clean_budget;
+        u32                 vport_id;
+        u16                 vport_type;
+        u16                 idx;
 
-        uint16_t                 max_mtu;
-        uint8_t                  default_mac_addr[ETHER_ADDR_LEN];
-        uint16_t                 rx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
-        uint16_t                 tx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
+        u16                 max_mtu;
+        u8                  default_mac_addr[ETHER_ADDR_LEN];
+        u16                 rx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
+        u16                 tx_itr_profile[IDPF_DIM_PROFILE_SLOTS];
 
         struct idpf_port_stats   port_stats;
         bool                     default_vport;
@@ -599,8 +599,8 @@ struct idpf_vport {
 
 /* -----------------------------------------------------------------------
  * enum idpf_user_flags — user-visible configuration flags.
- * Stored in idpf_vport_user_config_data.user_flags (uint64_t bitmask).
- * DECLARE_BITMAP replaced by uint64_t.  [LOCAL:A18]
+ * Stored in idpf_vport_user_config_data.user_flags (u64 bitmask).
+ * DECLARE_BITMAP replaced by u64.  [LOCAL:A18]
  * ----------------------------------------------------------------------- */
 enum idpf_user_flags {
         __IDPF_PRIV_FLAGS_HDR_SPLIT = 0,
@@ -611,19 +611,19 @@ enum idpf_user_flags {
 };
 
 _Static_assert(__IDPF_USER_FLAGS_NBITS <= 64,
-    "idpf_user_flags exceeds uint64_t width");
+    "idpf_user_flags exceeds u64 width");
 
 /* -----------------------------------------------------------------------
  * struct idpf_rss_data — RSS key, LUT, and hash configuration.
  * [IDPF:A13-A14] [LOCAL:A24]
  * ----------------------------------------------------------------------- */
 struct idpf_rss_data {
-        uint64_t  rss_hash;
-        uint16_t  rss_key_size;
-        uint8_t  *rss_key;
-        uint16_t  rss_lut_size;
-        uint32_t *rss_lut;
-        uint32_t *cached_lut;
+        u64  rss_hash;
+        u16  rss_key_size;
+        u8  *rss_key;
+        u16  rss_lut_size;
+        u32 *rss_lut;
+        u32 *cached_lut;
 };
 
 /* -----------------------------------------------------------------------
@@ -631,10 +631,10 @@ struct idpf_rss_data {
  * Used to restore user settings after a reset.  [LOCAL:A18]
  * ----------------------------------------------------------------------- */
 struct idpf_q_coalesce {
-        uint32_t tx_intr_mode;
-        uint32_t rx_intr_mode;
-        uint32_t tx_coalesce_usecs;
-        uint32_t rx_coalesce_usecs;
+        u32 tx_intr_mode;
+        u32 rx_intr_mode;
+        u32 tx_coalesce_usecs;
+        u32 rx_coalesce_usecs;
 };
 
 /* -----------------------------------------------------------------------
@@ -642,26 +642,26 @@ struct idpf_q_coalesce {
  *
  * XDP / AF_XDP fields removed (not in scope).
  * ETF fields removed (Linux-only).
- * DECLARE_BITMAP replaced by uint64_t bitmasks.
+ * DECLARE_BITMAP replaced by u64 bitmasks.
  * list_head replaced by TAILQ_HEAD.
  * [LOCAL:A18] [FBSD15:A30]
  * ----------------------------------------------------------------------- */
 struct idpf_vport_user_config_data {
         struct idpf_rss_data     rss_data;
         struct idpf_q_coalesce  *q_coalesce;
-        uint16_t                 num_req_tx_qs;
-        uint16_t                 num_req_rx_qs;
-        uint32_t                 num_req_txq_desc;
-        uint32_t                 num_req_rxq_desc;
-        uint64_t                 user_flags;    /* idpf_user_flags bits */
+        u16                 num_req_tx_qs;
+        u16                 num_req_rx_qs;
+        u32                 num_req_txq_desc;
+        u32                 num_req_rxq_desc;
+        u64                 user_flags;    /* idpf_user_flags bits */
         TAILQ_HEAD(idpf_mac_filter_head, idpf_mac_filter) mac_filter_list;
-        uint32_t                 num_fsteer_fltrs;
+        u32                 num_fsteer_fltrs;
         TAILQ_HEAD(idpf_fsteer_fltr_head, idpf_fsteer_fltr) flow_steer_list;
 };
 
 /* -----------------------------------------------------------------------
  * enum idpf_vport_config_flags — vport configuration flags.
- * Stored in idpf_vport_config.flags (uint32_t).  [LOCAL:A18]
+ * Stored in idpf_vport_config.flags (u32).  [LOCAL:A18]
  * ----------------------------------------------------------------------- */
 enum idpf_vport_config_flags {
         IDPF_VPORT_REG_NETDEV,
@@ -671,17 +671,17 @@ enum idpf_vport_config_flags {
 };
 
 _Static_assert(IDPF_VPORT_CONFIG_FLAGS_NBITS <= 32,
-    "idpf_vport_config_flags exceeds uint32_t width");
+    "idpf_vport_config_flags exceeds u32 width");
 
 /* -----------------------------------------------------------------------
  * struct idpf_avail_queue_info — available queue counts after vport alloc.
  * [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 struct idpf_avail_queue_info {
-        uint16_t avail_rxq;
-        uint16_t avail_txq;
-        uint16_t avail_bufq;
-        uint16_t avail_complq;
+        u16 avail_rxq;
+        u16 avail_txq;
+        u16 avail_bufq;
+        u16 avail_complq;
 };
 
 /* -----------------------------------------------------------------------
@@ -689,9 +689,9 @@ struct idpf_avail_queue_info {
  * [LOCAL:A21]
  * ----------------------------------------------------------------------- */
 struct idpf_vector_info {
-        uint16_t num_req_vecs;
-        uint16_t num_curr_vecs;
-        uint16_t index;
+        u16 num_req_vecs;
+        u16 num_curr_vecs;
+        u16 index;
         bool     default_vport;
 };
 
@@ -700,10 +700,10 @@ struct idpf_vector_info {
  * [LOCAL:A21]
  * ----------------------------------------------------------------------- */
 struct idpf_vector_lifo {
-        uint16_t  top;
-        uint16_t  base;
-        uint16_t  size;
-        uint16_t *vec_idx;
+        u16  top;
+        u16  base;
+        u16  size;
+        u16 *vec_idx;
 };
 
 /* -----------------------------------------------------------------------
@@ -711,11 +711,11 @@ struct idpf_vector_lifo {
  * [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 struct idpf_queue_id_reg_chunk {
-        uint64_t qtail_reg_start;
-        uint32_t qtail_reg_spacing;
-        uint32_t type;
-        uint32_t start_queue_id;
-        uint32_t num_queues;
+        u64 qtail_reg_start;
+        u32 qtail_reg_spacing;
+        u32 type;
+        u32 start_queue_id;
+        u32 num_queues;
 };
 
 /* -----------------------------------------------------------------------
@@ -723,7 +723,7 @@ struct idpf_queue_id_reg_chunk {
  * [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 struct idpf_queue_id_reg_info {
-        uint16_t                       num_chunks;
+        u16                       num_chunks;
         struct idpf_queue_id_reg_chunk *queue_chunks;
 };
 
@@ -732,7 +732,7 @@ struct idpf_queue_id_reg_info {
  *
  * idpf_vec_affinity_config removed (Linux cpumask / irq_affinity_notify).
  * spinlock_t replaced by struct mtx.
- * DECLARE_BITMAP replaced by uint32_t.
+ * DECLARE_BITMAP replaced by u32.
  * [FBSD15:A32] [LOCAL:A18]
  * ----------------------------------------------------------------------- */
 struct idpf_vport_config {
@@ -741,7 +741,7 @@ struct idpf_vport_config {
         struct idpf_queue_id_reg_info       qid_reg_info;
         struct mtx                          mac_filter_list_lock;
         struct mtx                          flow_steer_list_lock;
-        uint32_t                            flags; /* idpf_vport_config_flags */
+        u32                            flags; /* idpf_vport_config_flags */
 };
 
 /* -----------------------------------------------------------------------
@@ -781,19 +781,19 @@ struct idpf_adapter {
         const char                      *drv_name;
         const char                      *drv_ver;
 
-        uint32_t                         virt_ver_maj;
-        uint32_t                         virt_ver_min;
-        uint32_t                         mb_wait_count;
+        u32                         virt_ver_maj;
+        u32                         virt_ver_min;
+        u32                         mb_wait_count;
 
         enum idpf_state                  state;
 
         /*
          * flags: adapter-level state bits (idpf_flags).
-         * Plain uint32_t replaces Linux DECLARE_BITMAP.
+         * Plain u32 replaces Linux DECLARE_BITMAP.
          * Access: adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)
          * [FBSD15:A32]
          */
-        uint32_t                         flags;
+        u32                         flags;
 
         struct idpf_reset_reg            reset_reg;
         struct idpf_hw                   hw;
@@ -806,8 +806,8 @@ struct idpf_adapter {
          * msix_entries: array of num_msix_entries IRQ resource pointers.
          * [FBSD15:A34]
          */
-        uint16_t                         num_avail_msix;
-        uint16_t                         num_msix_entries;
+        u16                         num_avail_msix;
+        u16                         num_msix_entries;
         struct resource                **msix_entries;
 
         struct idpf_adi_info             adi_info;
@@ -829,7 +829,7 @@ struct idpf_adapter {
          */
         void                            *mb_intr_tag;
 
-        uint32_t                         tx_timeout_count;
+        u32                         tx_timeout_count;
         struct idpf_avail_queue_info     avail_queues;
 
         struct idpf_vport              **vports;
@@ -844,15 +844,15 @@ struct idpf_adapter {
 	if_ctx_t			attach_ctx;
 
         struct virtchnl2_create_vport  **vport_params_recvd;
-        uint32_t                        *vport_ids;
+        u32                        *vport_ids;
 
         struct idpf_rx_ptype_decoded    *singleq_pt_lkup;
         struct idpf_rx_ptype_decoded    *splitq_pt_lkup;
 
         struct idpf_vport_config       **vport_config;
-        uint16_t                         max_vports;
-        uint16_t                         num_alloc_vports;
-        uint16_t                         next_vport;
+        u16                         max_vports;
+        u16                         num_alloc_vports;
+        u16                         next_vport;
 
         /*
          * Deferred-work infrastructure.
@@ -913,7 +913,7 @@ struct idpf_adapter {
          * NULL when PTP is not negotiated.  [ON_HOLD — see §23.4]
          */
         struct idpf_ptp                  *ptp;
-        uint32_t                          tx_compl_tstamp_gran_s;
+        u32                          tx_compl_tstamp_gran_s;
 
         /*
          * corer_done: CORER completion notification.
@@ -938,7 +938,7 @@ struct idpf_adapter {
  * [IDPF:A13-A14]
  */
 static inline int
-idpf_is_queue_model_split(uint16_t q_model)
+idpf_is_queue_model_split(u16 q_model)
 {
         return (q_model == VIRTCHNL2_QUEUE_MODEL_SPLIT);
 }
@@ -953,14 +953,14 @@ idpf_is_queue_model_split(uint16_t q_model)
  * Declared here; defined in idpf_lib.c.  [IDPF:A13-A14]
  */
 bool idpf_is_capability_ena(struct idpf_adapter *adapter, bool all,
-                             enum idpf_cap_field field, uint64_t flag);
+                             enum idpf_cap_field field, u64 flag);
 
 /**
  * idpf_get_reserved_vecs - get the number of vectors reserved by CP
  * @adapter: private data struct
  * [IDPF:A13-A14]
  */
-static inline uint16_t
+static inline u16
 idpf_get_reserved_vecs(struct idpf_adapter *adapter)
 {
         return le16toh(adapter->caps.num_allocated_vectors);
@@ -971,10 +971,10 @@ idpf_get_reserved_vecs(struct idpf_adapter *adapter)
  * @adapter: private data struct
  * [IDPF:A13-A14]
  */
-static inline uint16_t
+static inline u16
 idpf_get_default_vports(struct idpf_adapter *adapter)
 {
-	uint16_t nvports = le16toh(adapter->caps.default_num_vports);
+	u16 nvports = le16toh(adapter->caps.default_num_vports);
 
 	/*
 	 * iflib creates one ifnet per PCI attach and only that vport owns an
@@ -989,7 +989,7 @@ idpf_get_default_vports(struct idpf_adapter *adapter)
  * @adapter: private data struct
  * [IDPF:A13-A14]
  */
-static inline uint16_t
+static inline u16
 idpf_get_max_vports(struct idpf_adapter *adapter)
 {
         return le16toh(adapter->caps.max_vports);
@@ -1011,10 +1011,10 @@ idpf_get_max_tx_bufs(struct idpf_adapter *adapter)
  * @adapter: private data struct
  * [IDPF:A13-A14]
  */
-static inline uint8_t
+static inline u8
 idpf_get_min_tx_pkt_len(struct idpf_adapter *adapter)
 {
-        uint8_t pkt_len = adapter->caps.min_sso_packet_len;
+        u8 pkt_len = adapter->caps.min_sso_packet_len;
 
         return pkt_len ? pkt_len : IDPF_TX_MIN_PKT_LEN;
 }
@@ -1032,11 +1032,11 @@ idpf_reg_offset_in_region(const struct idpf_mmio_reg *region,
                            bus_size_t reg_offset)
 {
         if (reg_offset < region->addr_start ||
-            region->addr_len < sizeof(uint32_t))
+            region->addr_len < sizeof(u32))
                 return false;
 
         return reg_offset - region->addr_start <=
-               region->addr_len - sizeof(uint32_t);
+               region->addr_len - sizeof(u32);
 }
 
 /**
@@ -1072,7 +1072,7 @@ idpf_reg_offset_is_mapped(struct idpf_adapter *adapter,
 static inline void *
 idpf_get_mbx_reg_addr(struct idpf_adapter *adapter, bus_size_t reg_offset)
 {
-        return (uint8_t *)adapter->hw.mbx.vaddr + reg_offset;
+        return (u8 *)adapter->hw.mbx.vaddr + reg_offset;
 }
 
 /**
@@ -1088,7 +1088,7 @@ static inline void *
 idpf_get_rstat_reg_addr(struct idpf_adapter *adapter, bus_size_t reg_offset)
 {
         reg_offset -= adapter->hw.rstat.addr_start;
-        return (uint8_t *)adapter->hw.rstat.vaddr + reg_offset;
+        return (u8 *)adapter->hw.rstat.vaddr + reg_offset;
 }
 
 /**
@@ -1112,7 +1112,7 @@ idpf_get_reg_addr(struct idpf_adapter *adapter, bus_size_t reg_offset)
 
                 if (idpf_reg_offset_in_region(region, reg_offset)) {
                         reg_offset -= region->addr_start;
-                        return (uint8_t *)region->vaddr + reg_offset;
+                        return (u8 *)region->vaddr + reg_offset;
                 }
         }
 
@@ -1311,7 +1311,7 @@ int  idpf_intr_req(struct idpf_adapter *adapter);
 void idpf_mb_intr_rel_irq(struct idpf_adapter *adapter);
 void idpf_intr_rel(struct idpf_adapter *adapter);
 int  idpf_req_rel_vector_indexes(struct idpf_adapter *adapter,
-                                  uint16_t *q_vector_idxs,
+                                  u16 *q_vector_idxs,
                                   struct idpf_vector_info *vec_info);
 int  idpf_vport_alloc_vec_indexes(struct idpf_vport *vport,
                                    struct idpf_q_vec_rsrc *rsrc);
@@ -1348,12 +1348,12 @@ bool idpf_is_reset_detected(struct idpf_adapter *adapter);
 /* Descriptor and interrupt helpers */
 int  idpf_check_supported_desc_ids(struct idpf_vport *vport);
 void idpf_vport_intr_write_itr(struct idpf_q_vector *q_vector,
-                                 uint16_t itr, bool tx);
+                                 u16 itr, bool tx);
 
 /* Promiscuous mode */
 int  idpf_set_promiscuous(struct idpf_adapter *adapter,
                            struct idpf_vport_user_config_data *config_data,
-                           uint32_t vport_id);
+                           u32 vport_id);
 
 /* Header split (CONDITIONAL — feature 078a / hsplit).
  * Signature uses plain bool; ethtool-netlink variant removed.  [LOCAL:A18] */

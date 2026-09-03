@@ -60,10 +60,10 @@
  */
 struct idpf_rx_singleq_fields {
 	struct idpf_rx_csum_decoded	csum;
-	uint32_t			hash;
-	uint16_t			len;
-	uint16_t			ptype;
-	uint16_t			vtag;
+	u32			hash;
+	u16			len;
+	u16			ptype;
+	u16			vtag;
 	bool				dd;
 	bool				eop;
 	bool				rxe;
@@ -86,7 +86,7 @@ struct idpf_rx_singleq_fields {
  * from the mbuf.  [IDPF:A13-A14] [FBSD15:A30]
  */
 static void
-idpf_tx_singleq_offload(if_pkt_info_t pi, uint32_t *cmd, uint32_t *off)
+idpf_tx_singleq_offload(if_pkt_info_t pi, u32 *cmd, u32 *off)
 {
 
 	switch (pi->ipi_etype) {
@@ -107,8 +107,8 @@ idpf_tx_singleq_offload(if_pkt_info_t pi, uint32_t *cmd, uint32_t *off)
 		return;
 	}
 
-	*off |= ((uint32_t)pi->ipi_ehdrlen >> 1) << IDPF_TX_DESC_LEN_MACLEN_S;
-	*off |= ((uint32_t)pi->ipi_ip_hlen >> 2) << IDPF_TX_DESC_LEN_IPLEN_S;
+	*off |= ((u32)pi->ipi_ehdrlen >> 1) << IDPF_TX_DESC_LEN_MACLEN_S;
+	*off |= ((u32)pi->ipi_ip_hlen >> 2) << IDPF_TX_DESC_LEN_IPLEN_S;
 
 	switch (pi->ipi_ipproto) {
 	case IPPROTO_TCP:
@@ -116,21 +116,21 @@ idpf_tx_singleq_offload(if_pkt_info_t pi, uint32_t *cmd, uint32_t *off)
 		    CSUM_IP_TSO | CSUM_IP6_TSO)) == 0)
 			break;
 		*cmd |= IDPF_TX_DESC_CMD_L4T_EOFT_TCP;
-		*off |= ((uint32_t)pi->ipi_tcp_hlen >> 2) <<
+		*off |= ((u32)pi->ipi_tcp_hlen >> 2) <<
 		    IDPF_TX_DESC_LEN_L4_LEN_S;
 		break;
 	case IPPROTO_UDP:
 		if ((pi->ipi_csum_flags & (CSUM_UDP | CSUM_IP6_UDP)) == 0)
 			break;
 		*cmd |= IDPF_TX_DESC_CMD_L4T_EOFT_UDP;
-		*off |= ((uint32_t)(sizeof(struct udphdr) >> 2)) <<
+		*off |= ((u32)(sizeof(struct udphdr) >> 2)) <<
 		    IDPF_TX_DESC_LEN_L4_LEN_S;
 		break;
 	case IPPROTO_SCTP:
 		if ((pi->ipi_csum_flags & (CSUM_SCTP | CSUM_IP6_SCTP)) == 0)
 			break;
 		*cmd |= IDPF_TX_DESC_CMD_L4T_EOFT_SCTP;
-		*off |= ((uint32_t)(sizeof(struct sctphdr) >> 2)) <<
+		*off |= ((u32)(sizeof(struct sctphdr) >> 2)) <<
 		    IDPF_TX_DESC_LEN_L4_LEN_S;
 		break;
 	default:
@@ -146,14 +146,14 @@ idpf_tx_singleq_offload(if_pkt_info_t pi, uint32_t *cmd, uint32_t *off)
  *
  * Returns the next descriptor index.  [IDPF:A13-A14]
  */
-static uint16_t
+static u16
 idpf_tx_singleq_tso_setup(struct idpf_queue *txq, if_pkt_info_t pi,
-    uint16_t idx)
+    u16 idx)
 {
 	struct idpf_base_tx_ctx_desc *ctx;
-	uint32_t hdr_len, tso_len;
-	uint16_t mss;
-	uint64_t qw1;
+	u32 hdr_len, tso_len;
+	u16 mss;
+	u64 qw1;
 
 	ctx = IDPF_BASE_TX_CTX_DESC(txq, idx);
 
@@ -191,7 +191,7 @@ idpf_tx_singleq_tso_setup(struct idpf_queue *txq, if_pkt_info_t pi,
  * the ring cannot overrun.  [LOCAL:A25]
  */
 static void
-idpf_tx_singleq_rs_push(struct idpf_queue *txq, uint16_t pidx_last)
+idpf_tx_singleq_rs_push(struct idpf_queue *txq, u16 pidx_last)
 {
 
 	txq->tx.bufs[txq->next_to_alloc].priv = pidx_last;
@@ -211,10 +211,10 @@ int
 idpf_tx_singleq_encap(struct idpf_queue *txq, if_pkt_info_t pi)
 {
 	bus_dma_segment_t *segs = pi->ipi_segs;
-	uint64_t td_tag = pi->ipi_vtag;
-	uint32_t cmd = 0, off = 0;
-	uint16_t i = pi->ipi_pidx;
-	uint16_t pidx_last = i;
+	u64 td_tag = pi->ipi_vtag;
+	u32 cmd = 0, off = 0;
+	u16 i = pi->ipi_pidx;
+	u16 pidx_last = i;
 	int j, nsegs = pi->ipi_nsegs;
 
 	if ((pi->ipi_csum_flags & CSUM_TSO) != 0) {
@@ -282,14 +282,14 @@ idpf_tx_singleq_encap(struct idpf_queue *txq, if_pkt_info_t pi)
 int
 idpf_tx_singleq_credits(struct idpf_queue *txq, bool clear)
 {
-	uint16_t rs_cidx = txq->next_to_clean;
-	uint16_t rs_pidx = txq->next_to_alloc;
-	uint16_t prev = (uint16_t)txq->tx.num_completions;
+	u16 rs_cidx = txq->next_to_clean;
+	u16 rs_pidx = txq->next_to_alloc;
+	u16 prev = (u16)txq->tx.num_completions;
 	int credits = 0;
 
 	while (rs_cidx != rs_pidx) {
 		const struct idpf_base_tx_desc *desc;
-		uint16_t cur = (uint16_t)txq->tx.bufs[rs_cidx].priv;
+		u16 cur = (u16)txq->tx.bufs[rs_cidx].priv;
 
 		if (__predict_false(cur >= txq->desc_count))
 			break;
@@ -330,8 +330,8 @@ static void
 idpf_rx_singleq_extract_base(const union virtchnl2_rx_desc *rx_desc,
     struct idpf_rx_singleq_fields *fields)
 {
-	uint32_t status, error;
-	uint64_t qword1;
+	u32 status, error;
+	u64 qword1;
 
 	qword1 = le64toh(rx_desc->base_wb.qword1.status_error_ptype_len);
 	status = IDPF_FIELD_GET(VIRTCHNL2_RX_BASE_DESC_QW1_STATUS_M, qword1);
@@ -379,7 +379,7 @@ static void
 idpf_rx_singleq_extract_flex(const union virtchnl2_rx_desc *rx_desc,
     struct idpf_rx_singleq_fields *fields)
 {
-	uint16_t status0, status1;
+	u16 status0, status1;
 
 	status0 = le16toh(rx_desc->flex_nic_wb.status_error0);
 	status1 = le16toh(rx_desc->flex_nic_wb.status_error1);
@@ -459,7 +459,7 @@ idpf_rx_singleq_extract(const struct idpf_queue *rxq,
 int
 idpf_rx_singleq_available(struct idpf_queue *rxq, qidx_t idx, qidx_t budget)
 {
-	uint16_t ntc = idx;
+	u16 ntc = idx;
 	int pkts = 0, descs = 0;
 
 	while (pkts < budget && descs < rxq->desc_count) {
@@ -497,8 +497,8 @@ idpf_rx_singleq_pkt_get(struct idpf_queue *rxq, if_rxd_info_t ri)
 {
 	const struct idpf_rx_ptype_decoded *decoded;
 	struct idpf_rx_singleq_fields fields;
-	uint16_t ntc = ri->iri_cidx;
-	uint32_t total_len = 0;
+	u16 ntc = ri->iri_cidx;
+	u32 total_len = 0;
 	int nfrags = 0;
 
 	for (;;) {
@@ -534,7 +534,7 @@ idpf_rx_singleq_pkt_get(struct idpf_queue *rxq, if_rxd_info_t ri)
 
 	rxq->next_to_clean = ntc;
 	ri->iri_nfrags = nfrags;
-	ri->iri_len = (uint16_t)total_len;
+	ri->iri_len = (u16)total_len;
 
 	if (__predict_false(fields.rxe)) {
 		rxq->q_stats.rx.bad_descs++;
@@ -578,8 +578,8 @@ void
 idpf_rx_singleq_refill(struct idpf_queue *rxq, if_rxd_update_t iru)
 {
 	struct virtchnl2_singleq_rx_buf_desc *desc;
-	uint32_t pidx = iru->iru_pidx;
-	uint16_t i;
+	u32 pidx = iru->iru_pidx;
+	u16 i;
 
 	for (i = 0; i < iru->iru_count; i++) {
 		MPASS(pidx < rxq->desc_count);

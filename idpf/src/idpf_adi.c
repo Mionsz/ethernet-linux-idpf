@@ -41,7 +41,7 @@
  * Return: the hardware vector index, or -1 when the vector is out of range.
  */
 static int
-idpf_adi_hw_vector(struct idpf_adapter *adapter, uint16_t vec_index)
+idpf_adi_hw_vector(struct idpf_adapter *adapter, u16 vec_index)
 {
 
 	if (vec_index >= adapter->num_msix_entries)
@@ -58,7 +58,7 @@ idpf_adi_hw_vector(struct idpf_adapter *adapter, uint16_t vec_index)
  * Return: the ADI, or NULL when no ADI carries that identifier.
  */
 static struct idpf_adi_priv *
-idpf_adi_find_priv(struct idpf_adapter *adapter, uint16_t adi_id)
+idpf_adi_find_priv(struct idpf_adapter *adapter, u16 adi_id)
 {
 	struct idpf_adi_priv *priv;
 
@@ -82,7 +82,7 @@ idpf_adi_find_priv(struct idpf_adapter *adapter, uint16_t adi_id)
  * state recorded here.
  */
 void
-idpf_notify_adi_reset(struct idpf_adapter *adapter, uint16_t adi_id,
+idpf_notify_adi_reset(struct idpf_adapter *adapter, u16 adi_id,
     bool reset)
 {
 	struct idpf_adi_priv *priv;
@@ -107,14 +107,14 @@ idpf_notify_adi_reset(struct idpf_adapter *adapter, uint16_t adi_id,
  * Return: the number of entries written.
  */
 static int
-__idpf_adi_qid_reg_init(struct idpf_adi_q *q, int num_qids, uint16_t q_type,
+__idpf_adi_qid_reg_init(struct idpf_adi_q *q, int num_qids, u16 q_type,
     struct virtchnl2_non_flex_queue_reg_chunks *chunks)
 {
-	uint16_t num_chunks = le16toh(chunks->num_chunks);
+	u16 num_chunks = le16toh(chunks->num_chunks);
 	struct virtchnl2_queue_reg_chunk *chunk;
-	uint32_t start_q_id, num_q, reg_spacing;
-	uint32_t q_id_filled = 0, i = 0, c;
-	uint64_t reg_val;
+	u32 start_q_id, num_q, reg_spacing;
+	u32 q_id_filled = 0, i = 0, c;
+	u64 reg_val;
 
 	for (c = 0; c < num_chunks; c++) {
 		chunk = &chunks->chunks[c];
@@ -127,7 +127,7 @@ __idpf_adi_qid_reg_init(struct idpf_adi_q *q, int num_qids, uint16_t q_type,
 		reg_spacing = le32toh(chunk->qtail_reg_spacing);
 
 		for (i = 0; i < num_q; i++) {
-			if ((q_id_filled + i) >= (uint32_t)num_qids)
+			if ((q_id_filled + i) >= (u32)num_qids)
 				break;
 			q[q_id_filled + i].qid = start_q_id;
 			q[q_id_filled + i].tail_reg = reg_val;
@@ -277,7 +277,7 @@ idpf_adi_dealloc_vectors(struct idpf_adi_priv *priv)
  * Return: the register value, or 0xdeadbeef for an offset the ADI does not
  * expose.
  */
-uint32_t
+u32
 idpf_adi_read_reg32(struct idpf_adi_priv *priv, size_t offs)
 {
 	struct idpf_adapter *adapter = priv->adapter;
@@ -332,7 +332,7 @@ idpf_adi_read_reg32(struct idpf_adi_priv *priv, size_t offs)
  * queue.
  */
 void
-idpf_adi_write_reg32(struct idpf_adi_priv *priv, size_t offs, uint32_t data)
+idpf_adi_write_reg32(struct idpf_adi_priv *priv, size_t offs, u32 data)
 {
 	struct idpf_adapter *adapter = priv->adapter;
 	int index;
@@ -518,14 +518,14 @@ err_free:
 int
 idpf_adi_core_init(struct idpf_adapter *adapter)
 {
-	uint16_t max_adi_cnt;
+	u16 max_adi_cnt;
 
 	max_adi_cnt = le16toh(adapter->caps.max_adis);
 	if (!adapter->adi_info.siov_ena || max_adi_cnt == 0)
 		return (0);
 
 	adapter->adi_info.max_adi_cnt = min(max_adi_cnt,
-	    (uint16_t)IDPF_MAX_ADI_NUM);
+	    (u16)IDPF_MAX_ADI_NUM);
 	device_printf(idpf_adapter_to_dev(adapter),
 	    "up to %u ADIs are permitted\n", adapter->adi_info.max_adi_cnt);
 

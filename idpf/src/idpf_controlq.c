@@ -28,8 +28,8 @@
 
 #include "idpf_controlq.h"
 
-#define IDPF_LO32(x)	((uint32_t)((x) & 0xffffffffULL))
-#define IDPF_HI32(x)	((uint32_t)(((uint64_t)(x)) >> 32))
+#define IDPF_LO32(x)	((u32)((x) & 0xffffffffULL))
+#define IDPF_HI32(x)	((u32)(((u64)(x)) >> 32))
 
 /**
  * idpf_ctlq_setup_regs - initialize control queue registers
@@ -66,7 +66,7 @@ idpf_ctlq_init_regs(struct idpf_hw *hw, struct idpf_ctlq_info *cq, bool is_rxq)
 
 	/* Update tail to post pre-allocated buffers for rx queues */
 	if (is_rxq)
-		wr32(hw, cq->reg.tail, (uint32_t)(cq->ring_size - 1));
+		wr32(hw, cq->reg.tail, (u32)(cq->ring_size - 1));
 
 	/* For non-Mailbox control queues only TAIL need to be set */
 	if (cq->q_id != -1)
@@ -252,7 +252,7 @@ idpf_ctlq_remove(struct idpf_hw *hw, struct idpf_ctlq_info *cq)
  * APIs.
  */
 int
-idpf_ctlq_init(struct idpf_hw *hw, uint8_t num_q,
+idpf_ctlq_init(struct idpf_hw *hw, u8 num_q,
     struct idpf_ctlq_create_info *q_info)
 {
 	struct idpf_ctlq_info *cq, *tmp;
@@ -307,7 +307,7 @@ idpf_ctlq_deinit(struct idpf_hw *hw)
  */
 int
 idpf_ctlq_send(struct idpf_hw *hw, struct idpf_ctlq_info *cq,
-    uint16_t num_q_msg, struct idpf_ctlq_msg q_msg[])
+    u16 num_q_msg, struct idpf_ctlq_msg q_msg[])
 {
 	struct idpf_ctlq_desc *desc;
 	int num_desc_avail;
@@ -418,12 +418,12 @@ err_unlock:
  * ctlq_msgs and free or reuse the DMA buffers.
  */
 static int
-__idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, uint16_t *clean_count,
+__idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, u16 *clean_count,
     struct idpf_ctlq_msg *msg_status[], bool force)
 {
 	struct idpf_ctlq_desc *desc;
-	uint16_t i, num_to_clean;
-	uint16_t ntc, desc_err;
+	u16 i, num_to_clean;
+	u16 ntc, desc_err;
 
 	if (*clean_count == 0)
 		return (0);
@@ -491,7 +491,7 @@ __idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, uint16_t *clean_count,
  * ctlq_msgs and free or reuse the DMA buffers.
  */
 int
-idpf_ctlq_clean_sq_force(struct idpf_ctlq_info *cq, uint16_t *clean_count,
+idpf_ctlq_clean_sq_force(struct idpf_ctlq_info *cq, u16 *clean_count,
     struct idpf_ctlq_msg *msg_status[])
 {
 
@@ -514,7 +514,7 @@ idpf_ctlq_clean_sq_force(struct idpf_ctlq_info *cq, uint16_t *clean_count,
  * ctlq_msgs and free or reuse the DMA buffers.
  */
 int
-idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, uint16_t *clean_count,
+idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, u16 *clean_count,
     struct idpf_ctlq_msg *msg_status[])
 {
 
@@ -538,11 +538,11 @@ idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, uint16_t *clean_count,
  */
 int
 idpf_ctlq_post_rx_buffs(struct idpf_hw *hw, struct idpf_ctlq_info *cq,
-    uint16_t *buff_count, struct idpf_dma_mem **buffs)
+    u16 *buff_count, struct idpf_dma_mem **buffs)
 {
 	struct idpf_ctlq_desc *desc;
 	bool buffs_avail = false;
-	uint16_t ntp, tbp;
+	u16 ntp, tbp;
 	int i = 0;
 
 	if (*buff_count > cq->ring_size)
@@ -665,13 +665,13 @@ post_buffs_out:
  * to free buffers
  */
 int
-idpf_ctlq_recv(struct idpf_ctlq_info *cq, uint16_t *num_q_msg,
+idpf_ctlq_recv(struct idpf_ctlq_info *cq, u16 *num_q_msg,
     struct idpf_ctlq_msg *q_msg)
 {
-	uint16_t num_to_clean, ntc, ret_val, flags;
+	u16 num_to_clean, ntc, ret_val, flags;
 	struct idpf_ctlq_desc *desc;
 	int err = 0;
-	uint16_t i;
+	u16 i;
 
 	if (cq == NULL || cq->ring_size == 0)
 		return (ENOBUFS);

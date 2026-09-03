@@ -31,72 +31,72 @@ enum idpf_ptp_access {
 };
 
 struct idpf_ptp_cmd {
-	uint32_t exec_cmd_mask;
-	uint32_t shtime_enable_mask;
+	u32 exec_cmd_mask;
+	u32 shtime_enable_mask;
 };
 
 struct idpf_ptp_dev_clk_regs {
-	uint32_t dev_clk_ns_l;
-	uint32_t dev_clk_ns_h;
-	uint32_t phy_clk_ns_l;
-	uint32_t phy_clk_ns_h;
-	uint32_t sys_time_ns_l;
-	uint32_t sys_time_ns_h;
-	uint32_t incval_l;
-	uint32_t incval_h;
-	uint32_t shadj_l;
-	uint32_t shadj_h;
-	uint32_t phy_incval_l;
-	uint32_t phy_incval_h;
-	uint32_t phy_shadj_l;
-	uint32_t phy_shadj_h;
-	uint32_t cmd;
-	uint32_t phy_cmd;
-	uint32_t cmd_sync;
+	u32 dev_clk_ns_l;
+	u32 dev_clk_ns_h;
+	u32 phy_clk_ns_l;
+	u32 phy_clk_ns_h;
+	u32 sys_time_ns_l;
+	u32 sys_time_ns_h;
+	u32 incval_l;
+	u32 incval_h;
+	u32 shadj_l;
+	u32 shadj_h;
+	u32 phy_incval_l;
+	u32 phy_incval_h;
+	u32 phy_shadj_l;
+	u32 phy_shadj_h;
+	u32 cmd;
+	u32 phy_cmd;
+	u32 cmd_sync;
 };
 
 struct idpf_ptp_secondary_mbx {
-	uint16_t peer_mbx_q_id;
-	uint8_t	 peer_id;
-	uint8_t	 mbx_q_index;
+	u16 peer_mbx_q_id;
+	u8	 peer_id;
+	u8	 mbx_q_index;
 	bool	 valid;
 };
 
 struct idpf_ptp_tx_tstamp {
-	uint32_t tx_latch_reg_offset_l;
-	uint32_t tx_latch_reg_offset_h;
-	uint8_t	 idx;
+	u32 tx_latch_reg_offset_l;
+	u32 tx_latch_reg_offset_h;
+	u8	 idx;
 };
 
 struct idpf_ptp_vport_tx_tstamp_caps {
-	uint32_t vport_id;
-	uint16_t num_entries;
-	uint8_t	 tstamp_ns_lo_bit;
-	uint8_t	 tstamp_ns_hi_bit;
-	uint32_t readiness_offset_l;
-	uint32_t readiness_offset_h;
-	uint8_t	 access;
+	u32 vport_id;
+	u16 num_entries;
+	u8	 tstamp_ns_lo_bit;
+	u8	 tstamp_ns_hi_bit;
+	u32 readiness_offset_l;
+	u32 readiness_offset_h;
+	u8	 access;
 	struct idpf_ptp_tx_tstamp *latches;
 };
 
 struct idpf_ptp_dev_timers {
-	uint64_t sys_time_ns;
-	uint64_t dev_clk_time_ns;
+	u64 sys_time_ns;
+	u64 dev_clk_time_ns;
 };
 
 struct idpf_ptp {
 	struct idpf_adapter *adapter;
-	uint64_t base_incval;
-	uint32_t max_adj;
+	u64 base_incval;
+	u32 max_adj;
 	struct idpf_ptp_cmd cmd;
-	uint64_t cached_phc_time;
+	u64 cached_phc_time;
 	int	 cached_phc_ticks;
 	struct idpf_ptp_dev_clk_regs dev_clk_regs;
-	uint32_t caps;
-	/* enum idpf_ptp_access; plain uint8_t avoids enum-bitfield warnings. */
-	uint8_t	 get_dev_clk_time_access;
-	uint8_t	 get_cross_tstamp_access;
-	uint8_t	 tx_tstamp_access;
+	u32 caps;
+	/* enum idpf_ptp_access; plain u8 avoids enum-bitfield warnings. */
+	u8	 get_dev_clk_time_access;
+	u8	 get_cross_tstamp_access;
+	u8	 tx_tstamp_access;
 	struct idpf_ptp_secondary_mbx secondary_mbx;
 	/* sx, not mtx: the mailbox read sleeps in cv_timedwait() while held. */
 	struct sx read_dev_clk_lock;
@@ -109,8 +109,8 @@ int	idpf_ptp_get_dev_clk_time(struct idpf_adapter *adapter,
 	    struct idpf_ptp_dev_timers *dev_clk_time);
 int	idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport);
 void	idpf_ptp_release_vport_tstamps_caps(struct idpf_vport *vport);
-uint64_t idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
-	    uint32_t in_timestamp);
+u64 idpf_ptp_tstamp_extend_32b_to_64b(u64 cached_phc_time,
+	    u32 in_timestamp);
 
 bool	idpf_ptp_is_vport_tx_tstamp_ena(struct idpf_vport *vport);
 bool	idpf_ptp_is_vport_rx_tstamp_ena(struct idpf_vport *vport);

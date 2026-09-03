@@ -97,7 +97,7 @@ static void
 idpf_mb_intr_reg_init(struct idpf_adapter *adapter)
 {
 	struct idpf_intr_reg *intr = &adapter->mb_vector.intr_reg;
-	uint32_t dyn_ctl = le32toh(adapter->caps.mailbox_dyn_ctl);
+	u32 dyn_ctl = le32toh(adapter->caps.mailbox_dyn_ctl);
 
 	intr->dyn_ctl = idpf_get_reg_addr(adapter, dyn_ctl);
 	intr->dyn_ctl_intena_m = PF_GLINT_DYN_CTL_INTENA_M;
@@ -120,8 +120,8 @@ idpf_intr_reg_init(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 	int num_vecs = rsrc->num_q_vectors;
 	struct idpf_vec_regs *reg_vals;
 	int num_regs, i, err = 0;
-	uint32_t rx_itr, tx_itr;
-	uint16_t total_vecs;
+	u32 rx_itr, tx_itr;
+	u16 total_vecs;
 
 	total_vecs = idpf_get_reserved_vecs(adapter);
 	reg_vals = malloc(total_vecs * sizeof(*reg_vals), M_DEVBUF,
@@ -137,9 +137,9 @@ idpf_intr_reg_init(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 
 	for (i = 0; i < num_vecs; i++) {
 		struct idpf_q_vector *q_vector = &rsrc->q_vectors[i];
-		uint16_t vec_id = rsrc->q_vector_idxs[i] - IDPF_MBX_Q_VEC;
+		u16 vec_id = rsrc->q_vector_idxs[i] - IDPF_MBX_Q_VEC;
 		struct idpf_intr_reg *intr = &q_vector->intr_reg;
-		uint32_t spacing;
+		u32 spacing;
 
 		intr->dyn_ctl = idpf_get_reg_addr(adapter,
 		    reg_vals[vec_id].dyn_ctl_reg);
@@ -208,7 +208,7 @@ static void
 idpf_trigger_reset(struct idpf_adapter *adapter,
     enum idpf_flags trig_cause __unused)
 {
-	uint32_t reset_reg;
+	u32 reset_reg;
 
 	reset_reg = idpf_reg_rd32(idpf_get_rstat_reg_addr(adapter, PFGEN_CTRL));
 	idpf_reg_wr32(idpf_get_rstat_reg_addr(adapter, PFGEN_CTRL),
@@ -224,12 +224,12 @@ idpf_trigger_reset(struct idpf_adapter *adapter,
  *
  * Return: the master time in nanoseconds.
  */
-static uint64_t
+static u64
 idpf_read_master_time_ns(const struct idpf_hw *hw)
 {
 	struct idpf_adapter *adapter = hw->back;
-	uint32_t ts_lo, ts_hi;
-	uint64_t ns_time;
+	u32 ts_lo, ts_hi;
+	u64 ns_time;
 
 	idpf_reg_wr32(idpf_get_reg_addr(adapter, PF_GLTSYN_CMD_SYNC),
 	    PF_GLTSYN_CMD_SYNC_SHTIME_EN_M);
@@ -239,8 +239,8 @@ idpf_read_master_time_ns(const struct idpf_hw *hw)
 	ts_lo = idpf_reg_rd32(idpf_get_reg_addr(adapter, PF_GLTSYN_SHTIME_L));
 	ts_hi = idpf_reg_rd32(idpf_get_reg_addr(adapter, PF_GLTSYN_SHTIME_H));
 
-	ns_time = (uint64_t)ts_hi << 32;
-	ns_time |= (uint64_t)ts_lo;
+	ns_time = (u64)ts_hi << 32;
+	ns_time |= (u64)ts_lo;
 
 	return (ns_time);
 }

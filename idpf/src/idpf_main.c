@@ -187,12 +187,12 @@ idpf_cfg_hw(struct idpf_adapter *adapter)
 	device_t dev = idpf_adapter_to_dev(adapter);
 	struct resource *bar0 = adapter->dev_ops.static_reg_info[0];
 	struct idpf_hw *hw = &adapter->hw;
-	uint8_t *base;
+	u8 *base;
 
 	if (bar0 == NULL)
 		return (ENXIO);
 
-	base = (uint8_t *)rman_get_virtual(bar0);
+	base = (u8 *)rman_get_virtual(bar0);
 
 	if (hw->mbx.addr_len == 0 || hw->rstat.addr_len == 0) {
 		device_printf(dev,
@@ -226,7 +226,7 @@ static int
 idpf_get_device_type(struct idpf_adapter *adapter)
 {
 	struct resource *bar0 = adapter->dev_ops.static_reg_info[0];
-	uint32_t val;
+	u32 val;
 
 	bus_write_4(bar0, VF_ARQBAL, IDPF_VF_TEST_VAL);
 	val = bus_read_4(bar0, VF_ARQBAL);
@@ -574,7 +574,7 @@ idpf_if_attach_pre(if_ctx_t ctx)
 	 * from the capability rather than being assumed.
 	 */
 	if (pci_find_cap(dev, PCIY_MSIX, &msix_cap) == 0) {
-		uint32_t table;
+		u32 table;
 
 		table = pci_read_config(dev, msix_cap + PCIR_MSIX_TABLE, 4);
 		rid = PCIR_BAR(table & PCIM_MSIX_BIR_MASK);
@@ -774,6 +774,20 @@ idpf_if_detach(if_ctx_t ctx)
 	adapter->flags |= (1u << IDPF_REMOVE_IN_PROG);
 
 	/*
+	 * Silence every periodic source before anything is released.  The
+	 * statistics callout walks adapter->vports[] and sends on the default
+	 * mailbox, both of which idpf_vc_core_deinit() and
+	 * idpf_deinit_dflt_mbx() below are about to free.
+	 */
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+	if (adapter->stats_wq != NULL)
+		taskqueue_drain(adapter->stats_wq, &adapter->stats_deferred);
+	if (adapter->mbx_wq != NULL)
+		taskqueue_drain(adapter->mbx_wq, &adapter->mbx_task);
+
+	/*
 	 * Wait for the event task before releasing anything: a hard reset in
 	 * flight would otherwise keep walking structures being freed.
 	 */
@@ -781,14 +795,25 @@ idpf_if_detach(if_ctx_t ctx)
 
 	idpf_vc_core_deinit(adapter);
 
+	/*
+	 * idpf_vc_core_deinit() returns early unless IDPF_VC_CORE_INIT is set,
+	 * so the mailbox interrupt can still be registered here.  It must be
+	 * torn down before the adapter its handler dereferences is freed.
+	 */
+	idpf_intr_rel(adapter);
+
 	/* Leave the device clean for whoever attaches next. */
 	adapter->dev_ops.reg_ops.trigger_reset(adapter, IDPF_HR_FUNC_RESET);
 	idpf_wait_for_func_reset(adapter);
+
+	/*
+	 * Stop the device before the buffers it may still be writing into are
+	 * handed back: residual DMA into recycled memory corrupts whatever is
+	 * allocated next, which surfaces far away from this driver.
+	 */
+	pci_disable_busmaster(dev);
 	idpf_deinit_dflt_mbx(adapter);
 
-	callout_drain(&adapter->serv_task);
-	callout_drain(&adapter->stats_task);
-	callout_drain(&adapter->mbx_poll_task);
 	idpf_free_taskqueues(adapter);
 
 	if (adapter->vport_config != NULL) {
@@ -829,7 +854,6 @@ idpf_if_detach(if_ctx_t ctx)
 		    adapter->dev_ops.static_reg_info[0]);
 		adapter->dev_ops.static_reg_info[0] = NULL;
 	}
-	pci_disable_busmaster(dev);
 
 	mtx_destroy(&adapter->adi_info.priv_lock);
 	cv_destroy(&adapter->corer_done_cv);
@@ -1008,7 +1032,7 @@ bool
 idpf_is_reset_detected(struct idpf_adapter *adapter)
 {
 	struct idpf_ctlq_reg *reg;
-	uint32_t arqlen;
+	u32 arqlen;
 
 	/* No need to check the reset state during a CORER. */
 	if ((adapter->flags & (1u << IDPF_CORER_IN_PROG)) != 0)

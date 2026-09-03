@@ -64,15 +64,15 @@ struct virtchnl2_non_flex_create_adi;
  * @data_q_vec_ids: hardware vector indexes of the data queue vectors
  */
 struct idpf_adi_vec_info {
-	uint16_t	 num_vectors;
-	uint16_t	*vec_indexes;
+	u16	 num_vectors;
+	u16	*vec_indexes;
 	int		 mbx_vec_id;
 	int		*data_q_vec_ids;
 };
 
 struct idpf_adi_q {
 	int		qid;
-	uint64_t	tail_reg;
+	u64	tail_reg;
 };
 
 struct idpf_adi_queue_info {
@@ -99,7 +99,7 @@ struct idpf_adi_priv {
 	int			 mbx_id;
 	/* ADI id assigned by the control plane */
 	int			 adi_id;
-	uint16_t		 adi_index;
+	u16		 adi_index;
 	enum idpf_adi_reset_state reset_state;
 };
 
@@ -114,13 +114,13 @@ struct idpf_adi_priv {
 struct idpf_adi_info {
 	TAILQ_HEAD(idpf_adi_priv_head, idpf_adi_priv) priv_list;
 	struct mtx	priv_lock;
-	uint16_t	max_adi_cnt;
-	uint16_t	curr_adi_cnt;
+	u16	max_adi_cnt;
+	u16	curr_adi_cnt;
 	bool		siov_ena;
 };
 
 int  idpf_adi_core_init(struct idpf_adapter *adapter);
-void idpf_notify_adi_reset(struct idpf_adapter *adapter, uint16_t adi_id,
+void idpf_notify_adi_reset(struct idpf_adapter *adapter, u16 adi_id,
     bool reset);
 struct idpf_adi_priv *idpf_adi_priv_alloc(struct idpf_adapter *adapter);
 void idpf_adi_priv_free(struct idpf_adi_priv *priv);
@@ -128,8 +128,8 @@ int  idpf_adi_qid_reg_init(struct idpf_adi_priv *priv,
     struct virtchnl2_non_flex_create_adi *vc_cadi);
 int  idpf_adi_alloc_vectors(struct idpf_adi_priv *priv);
 void idpf_adi_dealloc_vectors(struct idpf_adi_priv *priv);
-uint32_t idpf_adi_read_reg32(struct idpf_adi_priv *priv, size_t offs);
+u32 idpf_adi_read_reg32(struct idpf_adi_priv *priv, size_t offs);
 void idpf_adi_write_reg32(struct idpf_adi_priv *priv, size_t offs,
-    uint32_t data);
+    u32 data);
 
 #endif /* !_IDPF_ADI_H_ */

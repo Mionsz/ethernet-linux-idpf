@@ -89,23 +89,23 @@ static void	idpf_txq_group_rel(struct idpf_q_vec_rsrc *rsrc);
 static void	idpf_rxq_group_rel(struct idpf_q_vec_rsrc *rsrc);
 static void	idpf_vport_queue_grp_rel_all(struct idpf_q_vec_rsrc *rsrc);
 static int	idpf_txq_group_alloc(struct idpf_vport *vport,
-		    struct idpf_q_vec_rsrc *rsrc, uint16_t num_txq_per_grp);
+		    struct idpf_q_vec_rsrc *rsrc, u16 num_txq_per_grp);
 static int	idpf_rxq_group_alloc(struct idpf_vport *vport,
-		    struct idpf_q_vec_rsrc *rsrc, uint16_t num_rxq);
+		    struct idpf_q_vec_rsrc *rsrc, u16 num_rxq);
 static int	idpf_fast_path_txq_init(struct idpf_vport *vport,
 		    struct idpf_q_vec_rsrc *rsrc);
 static void	idpf_init_cached_phc_time(struct idpf_vport *vport,
 		    struct idpf_q_vec_rsrc *rsrc);
 
 static int	idpf_isc_txd_encap(void *arg, if_pkt_info_t pi);
-static void	idpf_isc_txd_flush(void *arg, uint16_t txqid, qidx_t pidx);
-static int	idpf_isc_txd_credits_update(void *arg, uint16_t txqid,
+static void	idpf_isc_txd_flush(void *arg, u16 txqid, qidx_t pidx);
+static int	idpf_isc_txd_credits_update(void *arg, u16 txqid,
 		    bool clear);
-static int	idpf_isc_rxd_available(void *arg, uint16_t rxqid, qidx_t idx,
+static int	idpf_isc_rxd_available(void *arg, u16 rxqid, qidx_t idx,
 		    qidx_t budget);
 static int	idpf_isc_rxd_pkt_get(void *arg, if_rxd_info_t ri);
 static void	idpf_isc_rxd_refill(void *arg, if_rxd_update_t iru);
-static void	idpf_isc_rxd_flush(void *arg, uint16_t rxqid, uint8_t flid,
+static void	idpf_isc_rxd_flush(void *arg, u16 rxqid, u8 flid,
 		    qidx_t pidx);
 
 static void	idpf_vport_intr_map_vector_to_qs(struct idpf_q_vec_rsrc *rsrc);
@@ -120,7 +120,7 @@ static void	idpf_vport_intr_dis_irq_all(struct idpf_q_vec_rsrc *rsrc);
  * every queue.  Both directions are therefore O(1).  [LOCAL:A25]
  * ------------------------------------------------------------------------- */
 static inline struct idpf_queue *
-idpf_txq(struct idpf_vport *vport, uint16_t qid)
+idpf_txq(struct idpf_vport *vport, u16 qid)
 {
 
 	return (vport->txqs[qid]);
@@ -143,7 +143,7 @@ idpf_softc_to_vport(void *softc)
 }
 
 static inline struct idpf_queue *
-idpf_rxq(struct idpf_q_vec_rsrc *rsrc, uint16_t qid)
+idpf_rxq(struct idpf_q_vec_rsrc *rsrc, u16 qid)
 {
 
 	if (idpf_is_queue_model_split(rsrc->rxq_model))
@@ -153,7 +153,7 @@ idpf_rxq(struct idpf_q_vec_rsrc *rsrc, uint16_t qid)
 }
 
 static inline struct idpf_queue *
-idpf_bufq(struct idpf_q_vec_rsrc *rsrc, uint16_t qid, uint8_t flid)
+idpf_bufq(struct idpf_q_vec_rsrc *rsrc, u16 qid, u8 flid)
 {
 
 	return (&rsrc->rxq_grps[qid].splitq.bufq_sets[flid].bufq);
@@ -237,7 +237,7 @@ idpf_tx_buf_rel_all(struct idpf_queue *txq)
  */
 static int
 idpf_txq_group_alloc(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc,
-    uint16_t num_txq_per_grp)
+    u16 num_txq_per_grp)
 {
 	struct idpf_adapter *adapter = vport->adapter;
 	bool split;
@@ -427,7 +427,7 @@ __idpf_rxq_init(struct idpf_vport *vport, struct idpf_queue *q)
  */
 static int
 idpf_rxq_group_alloc(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc,
-    uint16_t num_rxq)
+    u16 num_rxq)
 {
 	struct idpf_adapter *adapter = vport->adapter;
 	bool split = idpf_is_queue_model_split(rsrc->rxq_model);
@@ -652,7 +652,7 @@ idpf_init_cached_phc_time(struct idpf_vport *vport,
 
 	for (i = 0; i < rsrc->num_rxq_grp; i++) {
 		struct idpf_rxq_group *rx_qgrp = &rsrc->rxq_grps[i];
-		uint16_t num_rxq;
+		u16 num_rxq;
 
 		num_rxq = split ? rx_qgrp->splitq.num_rxq_sets :
 		    rx_qgrp->singleq.num_rxq;
@@ -687,7 +687,7 @@ int
 idpf_vport_queue_alloc_all(struct idpf_vport *vport,
     struct idpf_q_vec_rsrc *rsrc)
 {
-	uint16_t num_txq, num_rxq;
+	u16 num_txq, num_rxq;
 	int err;
 
 	/*
@@ -799,8 +799,8 @@ idpf_vport_calc_num_q_desc(struct idpf_vport *vport,
     struct idpf_q_vec_rsrc *rsrc)
 {
 	struct idpf_vport_user_config_data *config_data;
-	uint8_t num_bufqs = rsrc->num_bufqs_per_qgrp;
-	uint32_t num_req_txq_desc, num_req_rxq_desc;
+	u8 num_bufqs = rsrc->num_bufqs_per_qgrp;
+	u32 num_req_txq_desc, num_req_rxq_desc;
 	unsigned int i;
 
 	config_data = &vport->adapter->vport_config[vport->idx]->user_config;
@@ -844,11 +844,11 @@ idpf_vport_calc_num_q_desc(struct idpf_vport *vport,
  * [IDPF:A13-A14]
  */
 void
-idpf_vport_calc_total_qs(struct idpf_adapter *adapter, uint16_t vport_idx,
+idpf_vport_calc_total_qs(struct idpf_adapter *adapter, u16 vport_idx,
     struct virtchnl2_create_vport *vport_msg, struct idpf_vport_max_q *max_q)
 {
 	struct idpf_vport_config *vport_config;
-	uint16_t num_txq, num_rxq, num_complq = 0, num_bufq = 0;
+	u16 num_txq, num_rxq, num_complq = 0, num_bufq = 0;
 
 	vport_config = adapter->vport_config[vport_idx];
 
@@ -858,16 +858,16 @@ idpf_vport_calc_total_qs(struct idpf_adapter *adapter, uint16_t vport_idx,
 		num_txq = vport_config->user_config.num_req_tx_qs;
 		num_rxq = vport_config->user_config.num_req_rx_qs;
 	} else {
-		uint16_t dflt_tx = IDPF_DFLT_NUM_Q;
-		uint16_t dflt_rx = IDPF_DFLT_NUM_Q;
+		u16 dflt_tx = IDPF_DFLT_NUM_Q;
+		u16 dflt_rx = IDPF_DFLT_NUM_Q;
 
 		if (max_q->max_txq < dflt_tx)
 			dflt_tx = max_q->max_txq;
 		if (max_q->max_rxq < dflt_rx)
 			dflt_rx = max_q->max_rxq;
 
-		num_txq = min(dflt_tx, (uint16_t)mp_ncpus);
-		num_rxq = min(dflt_rx, (uint16_t)mp_ncpus);
+		num_txq = min(dflt_tx, (u16)mp_ncpus);
+		num_rxq = min(dflt_rx, (u16)mp_ncpus);
 	}
 
 	if (num_txq == 0)
@@ -933,7 +933,7 @@ idpf_txrx_ring_reset(struct idpf_queue *q)
  * [FBSD15:A30-A31]
  */
 int
-idpf_tx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
+idpf_tx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, u64 *paddrs,
     int ntxqs, int ntxqsets)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
@@ -1005,7 +1005,7 @@ idpf_tx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
  * [FBSD15:A30-A31]
  */
 int
-idpf_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
+idpf_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, u64 *paddrs,
     int nrxqs, int nrxqsets)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
@@ -1065,9 +1065,9 @@ idpf_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
  * into them before the queues are reconfigured.
  */
 void
-idpf_vport_set_rx_frame_size(struct idpf_q_vec_rsrc *rsrc, uint32_t mtu)
+idpf_vport_set_rx_frame_size(struct idpf_q_vec_rsrc *rsrc, u32 mtu)
 {
-	uint16_t i;
+	u16 i;
 
 	if (rsrc->rxq_grps == NULL)
 		return;
@@ -1114,7 +1114,7 @@ idpf_queues_free(if_ctx_t ctx)
  * mapping is absent.  [FBSD15:A31] [IDPF:A13-A14]
  */
 void
-idpf_tx_buf_hw_update(struct idpf_queue *tx_q, uint32_t val, bool xmit_more)
+idpf_tx_buf_hw_update(struct idpf_queue *tx_q, u32 val, bool xmit_more)
 {
 
 	tx_q->next_to_use = val;
@@ -1132,7 +1132,7 @@ idpf_tx_buf_hw_update(struct idpf_queue *tx_q, uint32_t val, bool xmit_more)
  * [FBSD15:A31] [IDPF:A13-A14]
  */
 void
-idpf_rx_buf_hw_update(struct idpf_queue *rxq, uint32_t val)
+idpf_rx_buf_hw_update(struct idpf_queue *rxq, u32 val)
 {
 
 	rxq->next_to_use = val;
@@ -1157,7 +1157,7 @@ idpf_rx_buf_hw_update(struct idpf_queue *rxq, uint32_t val)
  */
 void
 idpf_tx_splitq_build_ctb(union idpf_tx_flex_desc *desc,
-    struct idpf_tx_splitq_params *params, uint16_t td_cmd, uint16_t size)
+    struct idpf_tx_splitq_params *params, u16 td_cmd, u16 size)
 {
 
 	desc->q.qw1.cmd_dtype =
@@ -1180,10 +1180,10 @@ idpf_tx_splitq_build_ctb(union idpf_tx_flex_desc *desc,
  */
 void
 idpf_tx_splitq_build_flow_desc(union idpf_tx_flex_desc *desc,
-    struct idpf_tx_splitq_params *params, uint16_t td_cmd, uint16_t size)
+    struct idpf_tx_splitq_params *params, u16 td_cmd, u16 size)
 {
 
-	desc->flow.qw1.cmd_dtype = (uint8_t)(params->dtype | td_cmd);
+	desc->flow.qw1.cmd_dtype = (u8)(params->dtype | td_cmd);
 	desc->flow.qw1.rxr_bufsize = htole16(size & IDPF_TXD_FLEX_FLOW_BUFSIZE_M);
 	desc->flow.qw1.compl_tag = htole16(params->compl_tag);
 	desc->flow.qw1.ts[0] = params->offload.desc_ts[0];
@@ -1199,12 +1199,12 @@ idpf_tx_splitq_build_flow_desc(union idpf_tx_flex_desc *desc,
  *
  * Returns the next descriptor index.  [IDPF:A13-A14]
  */
-static uint16_t
+static u16
 idpf_tx_splitq_tso_setup(struct idpf_queue *txq, if_pkt_info_t pi,
-    uint16_t idx)
+    u16 idx)
 {
 	union idpf_flex_tx_ctx_desc *ctx;
-	uint32_t hdr_len, tso_len;
+	u32 hdr_len, tso_len;
 
 	ctx = IDPF_FLEX_TX_CTX_DESC(txq, idx);
 
@@ -1216,7 +1216,7 @@ idpf_tx_splitq_tso_setup(struct idpf_queue *txq, if_pkt_info_t pi,
 	ctx->tso.qw0.flex_tlen = htole32(tso_len & IDPF_TXD_FLEX_CTX_TLEN_M);
 	ctx->tso.qw0.mss_rt = htole16(pi->ipi_tso_segsz &
 	    IDPF_TXD_FLEX_CTX_MSS_RT_M);
-	ctx->tso.qw0.hdr_len = (uint8_t)hdr_len;
+	ctx->tso.qw0.hdr_len = (u8)hdr_len;
 	ctx->tso.qw0.flex = 0;
 	memset(ctx->tso.qw1.flex, 0, sizeof(ctx->tso.qw1.flex));
 
@@ -1239,8 +1239,8 @@ idpf_tx_splitq_encap(struct idpf_queue *txq, if_pkt_info_t pi)
 		.td_tag = pi->ipi_vtag,
 	};
 	bus_dma_segment_t *segs = pi->ipi_segs;
-	uint16_t i = pi->ipi_pidx;
-	uint16_t td_cmd = 0;
+	u16 i = pi->ipi_pidx;
+	u16 td_cmd = 0;
 	int j, nsegs = pi->ipi_nsegs;
 
 	if ((pi->ipi_csum_flags & CSUM_TSO) != 0) {
@@ -1282,7 +1282,7 @@ idpf_tx_splitq_encap(struct idpf_queue *txq, if_pkt_info_t pi)
 			td_cmd |= IDPF_TX_FLEX_DESC_CMD_EOP |
 			    IDPF_TX_FLEX_DESC_CMD_RS;
 		idpf_tx_splitq_build_ctb(desc, &params, td_cmd,
-		    (uint16_t)len);
+		    (u16)len);
 		i = idpf_ring_next(i, txq->desc_count);
 	}
 
@@ -1344,7 +1344,7 @@ idpf_isc_txd_encap(void *arg, if_pkt_info_t pi)
  * @pidx: producer index to publish
  */
 static void
-idpf_isc_txd_flush(void *arg, uint16_t txqid, qidx_t pidx)
+idpf_isc_txd_flush(void *arg, u16 txqid, qidx_t pidx)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(arg);
 	struct idpf_queue *txq = idpf_txq(vport, txqid);
@@ -1364,7 +1364,7 @@ static void
 idpf_tx_handle_sw_marker(struct idpf_queue *tx_q)
 {
 	struct idpf_vport *vport = tx_q->vport;
-	uint16_t i;
+	u16 i;
 
 	idpf_queue_clear(SW_MARKER, tx_q);
 
@@ -1394,16 +1394,16 @@ idpf_tx_splitq_credits(struct idpf_queue *txq, bool clear)
 {
 	struct idpf_queue *complq = txq->txq_grp->complq;
 	struct idpf_splitq_tx_compl_desc *desc;
-	uint16_t ntc = complq->next_to_clean;
-	uint16_t head = txq->next_to_clean;
+	u16 ntc = complq->next_to_clean;
+	u16 head = txq->next_to_clean;
 	bool gen = idpf_queue_has(GEN_CHK, complq);
 	unsigned int budget = IDPF_TX_COMPLQ_CLEAN_BUDGET;
-	uint32_t completions = 0;
+	u32 completions = 0;
 	int credits;
 
 	while (budget-- != 0) {
-		uint16_t qid_comptype_gen, rel_qid;
-		uint8_t ctype;
+		u16 qid_comptype_gen, rel_qid;
+		u8 ctype;
 
 		desc = IDPF_SPLITQ_TX_COMPLQ_DESC(complq, ntc);
 		qid_comptype_gen = le16toh(desc->qid_comptype_gen);
@@ -1425,7 +1425,7 @@ idpf_tx_splitq_credits(struct idpf_queue *txq, bool clear)
 		switch (ctype) {
 		case IDPF_TXD_COMPLT_RE:
 		case IDPF_TXD_COMPLT_RS: {
-			uint16_t hw_head =
+			u16 hw_head =
 			    le16toh(desc->q_head_compl_tag.q_head);
 
 			if (__predict_false(hw_head >= txq->desc_count))
@@ -1471,7 +1471,7 @@ next:
  * @clear: commit the reclaim when true
  */
 static int
-idpf_isc_txd_credits_update(void *arg, uint16_t txqid, bool clear)
+idpf_isc_txd_credits_update(void *arg, u16 txqid, bool clear)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(arg);
 	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
@@ -1494,7 +1494,7 @@ idpf_isc_txd_credits_update(void *arg, uint16_t txqid, bool clear)
  * Returns an M_HASHTYPE_* value; iflib stamps it onto the mbuf together with
  * iri_flowid.  [FBSD15:A30] [IDPF:A13-A14]
  */
-uint32_t
+u32
 idpf_ptype_to_htype(const struct idpf_rx_ptype_decoded *decoded)
 {
 
@@ -1600,8 +1600,8 @@ idpf_rx_splitq_extract_csum_bits(
     const struct virtchnl2_rx_flex_desc_adv_nic_3 *rx_desc,
     struct idpf_rx_csum_decoded *csum)
 {
-	uint8_t qword0 = rx_desc->status_err0_qw0;
-	uint8_t qword1 = rx_desc->status_err0_qw1;
+	u8 qword0 = rx_desc->status_err0_qw0;
+	u8 qword1 = rx_desc->status_err0_qw1;
 
 	csum->ipe = !!(qword1 &
 	    VIRTCHNL2_RX_FLEX_DESC_ADV_STATUS0_XSUM_IPE_M);
@@ -1629,9 +1629,9 @@ idpf_rx_splitq_extract_csum_bits(
  * of range or the lookup table has not been received yet.  [IDPF:A13-A17]
  */
 const struct idpf_rx_ptype_decoded *
-idpf_rx_decode_ptype(struct idpf_queue *rxq, uint16_t ptype)
+idpf_rx_decode_ptype(struct idpf_queue *rxq, u16 ptype)
 {
-	uint16_t limit;
+	u16 limit;
 
 	if (__predict_false(rxq->rx_ptype_lkup == NULL))
 		return (NULL);
@@ -1661,13 +1661,13 @@ idpf_rx_decode_ptype(struct idpf_queue *rxq, uint16_t ptype)
 static int
 idpf_rx_splitq_available(struct idpf_queue *rxq, qidx_t budget)
 {
-	uint16_t ntc = rxq->next_to_clean;
+	u16 ntc = rxq->next_to_clean;
 	bool gen = idpf_queue_has(GEN_CHK, rxq);
 	int pkts = 0, descs = 0;
 
 	while (pkts < budget && descs < rxq->desc_count) {
 		const struct virtchnl2_rx_flex_desc_adv_nic_3 *rx_desc;
-		uint16_t pktlen_gen_bufq_id;
+		u16 pktlen_gen_bufq_id;
 
 		rx_desc = &IDPF_RX_DESC(rxq, ntc)->flex_adv_nic_3_wb;
 		atomic_thread_fence_acq();
@@ -1704,16 +1704,16 @@ idpf_rx_splitq_pkt_get(struct idpf_queue *rxq, if_rxd_info_t ri)
 	const struct idpf_rx_ptype_decoded *decoded = NULL;
 	struct idpf_rx_csum_decoded csum_bits = { 0 };
 	const struct virtchnl2_rx_flex_desc_adv_nic_3 *rx_desc = NULL;
-	uint16_t ntc = rxq->next_to_clean;
-	uint32_t total_len = 0;
-	uint16_t ptype = IDPF_INVALID_PTYPE_ID;
+	u16 ntc = rxq->next_to_clean;
+	u32 total_len = 0;
+	u16 ptype = IDPF_INVALID_PTYPE_ID;
 	int nfrags = 0, err = 0;
 	bool gen = idpf_queue_has(GEN_CHK, rxq);
 	bool rsc = false;
 
 	for (;;) {
-		uint16_t pktlen_gen_bufq_id, pkt_len, buf_id, hdrlen_flags;
-		uint8_t bufq_id, rxdid;
+		u16 pktlen_gen_bufq_id, pkt_len, buf_id, hdrlen_flags;
+		u8 bufq_id, rxdid;
 		bool eop;
 
 		rx_desc = &IDPF_RX_DESC(rxq, ntc)->flex_adv_nic_3_wb;
@@ -1797,7 +1797,7 @@ advance:
 	idpf_queue_assign(GEN_CHK, rxq, gen);
 	ri->iri_cidx = ntc;
 	ri->iri_nfrags = nfrags;
-	ri->iri_len = (uint16_t)total_len;
+	ri->iri_len = (u16)total_len;
 
 	if (err != 0 || nfrags == 0)
 		return (err != 0 ? err : EBADMSG);
@@ -1805,8 +1805,8 @@ advance:
 	decoded = idpf_rx_decode_ptype(rxq, ptype);
 	if (decoded != NULL && decoded->known) {
 		ri->iri_flowid = le16toh(rx_desc->hash1) |
-		    ((uint32_t)rx_desc->ff2_mirrid_hash2.hash2 << 16) |
-		    ((uint32_t)rx_desc->hash3 << 24);
+		    ((u32)rx_desc->ff2_mirrid_hash2.hash2 << 16) |
+		    ((u32)rx_desc->hash3 << 24);
 		ri->iri_rsstype = idpf_ptype_to_htype(decoded);
 
 		idpf_rx_splitq_extract_csum_bits(rx_desc, &csum_bits);
@@ -1842,8 +1842,8 @@ static void
 idpf_rx_splitq_refill(struct idpf_queue *bufq, if_rxd_update_t iru)
 {
 	struct virtchnl2_splitq_rx_buf_desc *desc;
-	uint32_t pidx = iru->iru_pidx;
-	uint16_t i;
+	u32 pidx = iru->iru_pidx;
+	u16 i;
 
 	for (i = 0; i < iru->iru_count; i++) {
 		MPASS(pidx < bufq->desc_count);
@@ -1867,7 +1867,7 @@ idpf_rx_splitq_refill(struct idpf_queue *bufq, if_rxd_update_t iru)
  * ------------------------------------------------------------------------- */
 
 static int
-idpf_isc_rxd_available(void *arg, uint16_t rxqid, qidx_t idx, qidx_t budget)
+idpf_isc_rxd_available(void *arg, u16 rxqid, qidx_t idx, qidx_t budget)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(arg);
 	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
@@ -1945,12 +1945,12 @@ idpf_isc_rxd_refill(void *arg, if_rxd_update_t iru)
  * skipped when rounding produces no progress.  [IDPF:A13-A14]
  */
 static void
-idpf_isc_rxd_flush(void *arg, uint16_t rxqid, uint8_t flid, qidx_t pidx)
+idpf_isc_rxd_flush(void *arg, u16 rxqid, u8 flid, qidx_t pidx)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(arg);
 	struct idpf_q_vec_rsrc *rsrc;
 	struct idpf_queue *q;
-	uint32_t tail;
+	u32 tail;
 
 	/* Reached from the same unconditional iflib path as the refill. */
 	if (vport == NULL)
@@ -2006,7 +2006,7 @@ struct if_txrx idpf_txrx_ops = {
 void
 idpf_vport_intr_rel(struct idpf_q_vec_rsrc *rsrc)
 {
-	uint16_t v_idx;
+	u16 v_idx;
 
 	if (rsrc->q_vectors == NULL)
 		return;
@@ -2045,9 +2045,9 @@ int
 idpf_vport_intr_alloc(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 {
 	struct idpf_vport_user_config_data *user_config;
-	uint16_t txqs_per_vector, rxqs_per_vector, bufqs_per_vector;
-	uint16_t num_txq_vec_need;
-	uint16_t v_idx;
+	u16 txqs_per_vector, rxqs_per_vector, bufqs_per_vector;
+	u16 num_txq_vec_need;
+	u16 v_idx;
 
 	if (rsrc->num_q_vectors == 0)
 		return (EINVAL);
@@ -2123,11 +2123,11 @@ idpf_vport_intr_map_vector_to_qs(struct idpf_q_vec_rsrc *rsrc)
 	bool rx_split = idpf_is_queue_model_split(rsrc->rxq_model);
 	bool tx_split = idpf_is_queue_model_split(rsrc->txq_model);
 	unsigned int i, j;
-	uint16_t qv_idx = 0, bufq_vidx = 0;
+	u16 qv_idx = 0, bufq_vidx = 0;
 
 	for (i = 0; i < rsrc->num_rxq_grp; i++) {
 		struct idpf_rxq_group *rx_qgrp = &rsrc->rxq_grps[i];
-		uint16_t num_rxq;
+		u16 num_rxq;
 
 		num_rxq = rx_split ? rx_qgrp->splitq.num_rxq_sets :
 		    rx_qgrp->singleq.num_rxq;
@@ -2194,12 +2194,12 @@ idpf_vport_intr_map_vector_to_qs(struct idpf_q_vec_rsrc *rsrc)
  * Leaving PBA untouched avoids dropping interrupts that arrived while the
  * queue was being polled.  [IDPF:A13-A14]
  */
-static uint32_t
+static u32
 idpf_vport_intr_buildreg_itr(struct idpf_q_vector *q_vector)
 {
-	uint32_t itr_val = q_vector->intr_reg.dyn_ctl_intena_m;
-	uint32_t type = IDPF_NO_ITR_UPDATE_IDX;
-	uint16_t itr = 0;
+	u32 itr_val = q_vector->intr_reg.dyn_ctl_intena_m;
+	u32 type = IDPF_NO_ITR_UPDATE_IDX;
+	u16 itr = 0;
 
 	if (q_vector->wb_on_itr) {
 		/* Trigger a software interrupt when leaving write-back-on-ITR. */
@@ -2211,7 +2211,7 @@ idpf_vport_intr_buildreg_itr(struct idpf_q_vector *q_vector)
 
 	itr &= IDPF_ITR_MASK;
 	itr_val |= (type << q_vector->intr_reg.dyn_ctl_itridx_s) |
-	    ((uint32_t)itr << (q_vector->intr_reg.dyn_ctl_intrvl_s - 1));
+	    ((u32)itr << (q_vector->intr_reg.dyn_ctl_intrvl_s - 1));
 
 	return (itr_val);
 }
@@ -2223,7 +2223,7 @@ idpf_vport_intr_buildreg_itr(struct idpf_q_vector *q_vector)
 void
 idpf_vport_intr_update_itr_ena_irq(struct idpf_q_vector *q_vector)
 {
-	uint32_t intval;
+	u32 intval;
 
 	intval = idpf_vport_intr_buildreg_itr(q_vector);
 	q_vector->wb_on_itr = false;
@@ -2264,7 +2264,7 @@ idpf_vport_intr_set_wb_on_itr(struct idpf_q_vector *q_vector)
  * [IDPF:A13-A14]
  */
 void
-idpf_vport_intr_write_itr(struct idpf_q_vector *q_vector, uint16_t itr,
+idpf_vport_intr_write_itr(struct idpf_q_vector *q_vector, u16 itr,
     bool tx)
 {
 	struct idpf_intr_reg *intr_reg;
@@ -2286,7 +2286,7 @@ idpf_vport_intr_write_itr(struct idpf_q_vector *q_vector, uint16_t itr,
 static void
 idpf_vport_intr_dis_irq_all(struct idpf_q_vec_rsrc *rsrc)
 {
-	uint16_t q_idx;
+	u16 q_idx;
 
 	if (rsrc->q_vectors == NULL)
 		return;
@@ -2307,7 +2307,7 @@ idpf_vport_intr_dis_irq_all(struct idpf_q_vec_rsrc *rsrc)
 void
 idpf_vport_intr_ena(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 {
-	uint16_t q_idx;
+	u16 q_idx;
 
 	if (rsrc->q_vectors == NULL)
 		return;
@@ -2335,7 +2335,7 @@ int
 idpf_vport_intr_init(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 {
 	struct idpf_adapter *adapter = vport->adapter;
-	uint16_t i;
+	u16 i;
 	int err;
 
 	if (rsrc->q_vectors == NULL || rsrc->q_vector_idxs == NULL)
@@ -2376,7 +2376,7 @@ idpf_vport_intr_deinit(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
  * Returns 0.  [FBSD15:A34]
  */
 int
-idpf_tx_queue_intr_enable(if_ctx_t ctx, uint16_t txqid)
+idpf_tx_queue_intr_enable(if_ctx_t ctx, u16 txqid)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
 	struct idpf_queue *txq;
@@ -2400,7 +2400,7 @@ idpf_tx_queue_intr_enable(if_ctx_t ctx, uint16_t txqid)
  * Returns 0.  [FBSD15:A34]
  */
 int
-idpf_rx_queue_intr_enable(if_ctx_t ctx, uint16_t rxqid)
+idpf_rx_queue_intr_enable(if_ctx_t ctx, u16 rxqid)
 {
 	struct idpf_vport *vport = idpf_softc_to_vport(iflib_get_softc(ctx));
 	struct idpf_queue *rxq;
@@ -2480,8 +2480,8 @@ static void
 idpf_fill_dflt_rss_lut(struct idpf_rss_data *rss_data,
     struct idpf_q_vec_rsrc *rsrc)
 {
-	uint16_t num_active_rxq = rsrc->num_rxq;
-	uint16_t i;
+	u16 num_active_rxq = rsrc->num_rxq;
+	u16 i;
 
 	for (i = 0; i < rss_data->rss_lut_size; i++) {
 		rss_data->rss_lut[i] = i % num_active_rxq;
@@ -2501,7 +2501,7 @@ int
 idpf_init_rss(struct idpf_vport *vport, struct idpf_rss_data *rss_data,
     struct idpf_q_vec_rsrc *rsrc)
 {
-	uint32_t lut_size;
+	u32 lut_size;
 	int err;
 
 	if (rss_data->rss_lut_size == 0 || rsrc->num_rxq == 0) {

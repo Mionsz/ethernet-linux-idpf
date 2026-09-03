@@ -7,7 +7,7 @@
 /*
  * Control queue descriptor layout and internal helpers.
  *
- * FreeBSD port notes: __le16/__le32 become plain uint16_t/uint32_t - the
+ * FreeBSD port notes: __le16/__le32 become plain u16/u32 - the
  * descriptor fields are little-endian on the wire and every access already
  * goes through htole*()/le*toh() explicitly.  BIT() is spelled out because
  * FreeBSD has no such macro.  The DMA allocation prototypes moved to
@@ -27,7 +27,7 @@
 	(&(((struct idpf_ctlq_desc *)((R)->desc_ring.va))[i]))
 
 #define IDPF_CTLQ_DESC_UNUSED(R) \
-	((uint16_t)((((R)->next_to_clean > (R)->next_to_use) ? 0 : \
+	((u16)((((R)->next_to_clean > (R)->next_to_use) ? 0 : \
 	      (R)->ring_size) + (R)->next_to_clean - (R)->next_to_use - 1))
 
 /* Control Queue default settings */
@@ -39,29 +39,29 @@
 #define IDPF_CTLQ_DESC_PF_ID_M	(0x1F << IDPF_CTLQ_DESC_PF_ID_S)
 
 struct idpf_ctlq_desc {
-	uint16_t	flags;
-	uint16_t	opcode;
-	uint16_t	datalen;	/* 0 for direct commands */
+	u16	flags;
+	u16	opcode;
+	u16	datalen;	/* 0 for direct commands */
 	union {
-		uint16_t ret_val;
-		uint16_t pfid_vfid;
+		u16 ret_val;
+		u16 pfid_vfid;
 	};
-	uint32_t cookie_high;
-	uint32_t cookie_low;
+	u32 cookie_high;
+	u32 cookie_low;
 	union {
 		struct {
-			uint32_t param0;
-			uint32_t param1;
-			uint32_t param2;
-			uint32_t param3;
+			u32 param0;
+			u32 param1;
+			u32 param2;
+			u32 param3;
 		} direct;
 		struct {
-			uint32_t param0;
-			uint32_t param1;
-			uint32_t addr_high;
-			uint32_t addr_low;
+			u32 param0;
+			u32 param1;
+			u32 addr_high;
+			u32 addr_low;
 		} indirect;
-		uint8_t raw[16];
+		u8 raw[16];
 	} params;
 };
 
@@ -89,10 +89,10 @@ struct idpf_ctlq_desc {
 #define IDPF_CTLQ_FLAG_BUF	(1U << IDPF_CTLQ_FLAG_BUF_S)	  /* 0x1000 */
 
 struct idpf_mbxq_desc {
-	uint8_t  pad[8];	/* CTLQ flags/opcode/len/retval fields */
-	uint32_t chnl_opcode;	/* avoid confusion with desc->opcode */
-	uint32_t chnl_retval;	/* ditto for desc->retval */
-	uint32_t pf_vf_id;	/* used by CP when sending to PF */
+	u8  pad[8];	/* CTLQ flags/opcode/len/retval fields */
+	u32 chnl_opcode;	/* avoid confusion with desc->opcode */
+	u32 chnl_retval;	/* ditto for desc->retval */
+	u32 pf_vf_id;	/* used by CP when sending to PF */
 };
 
 /**

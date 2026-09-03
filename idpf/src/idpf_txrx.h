@@ -90,7 +90,7 @@ struct idpf_queue_id_reg_info;
 #define IDPF_FIELD_GET(mask, val) \
         (((val) & (mask)) >> (__builtin_ffsll(mask) - 1))
 #define IDPF_FIELD_PREP(mask, val) \
-        ((((uint64_t)(val)) << (__builtin_ffsll(mask) - 1)) & (mask))
+        ((((u64)(val)) << (__builtin_ffsll(mask) - 1)) & (mask))
 
 /**
  * idpf_reg_wr32 - MMIO seam for the datapath doorbell and ITR registers
@@ -104,11 +104,11 @@ struct idpf_queue_id_reg_info;
  * ahead of the doorbell.  [FBSD15:A31]
  */
 static inline void
-idpf_reg_wr32(void *addr, uint32_t value)
+idpf_reg_wr32(void *addr, u32 value)
 {
 
         atomic_thread_fence_rel();
-        *(volatile uint32_t *)addr = htole32(value);
+        *(volatile u32 *)addr = htole32(value);
 }
 
 /**
@@ -118,12 +118,12 @@ idpf_reg_wr32(void *addr, uint32_t value)
  * The acquire fence keeps loads issued after the register read from being
  * hoisted above it.  [FBSD15:A31]
  */
-static inline uint32_t
+static inline u32
 idpf_reg_rd32(void *addr)
 {
-        uint32_t value;
+        u32 value;
 
-        value = le32toh(*(volatile uint32_t *)addr);
+        value = le32toh(*(volatile u32 *)addr);
         atomic_thread_fence_acq();
 
         return (value);
@@ -137,8 +137,8 @@ idpf_reg_rd32(void *addr)
  * IDPF only requires descriptor counts to be a multiple of 32, not a power of
  * two, so mask-based wrapping is not safe here.  [IDPF:A13-A14]
  */
-static inline uint16_t
-idpf_ring_next(uint16_t idx, uint16_t count)
+static inline u16
+idpf_ring_next(u16 idx, u16 count)
 {
 
         return (++idx == count ? 0 : idx);
@@ -150,11 +150,11 @@ idpf_ring_next(uint16_t idx, uint16_t count)
  * @to: newer index
  * @count: ring size
  */
-static inline uint16_t
-idpf_ring_delta(uint16_t from, uint16_t to, uint16_t count)
+static inline u16
+idpf_ring_delta(u16 from, u16 to, u16 count)
 {
 
-        return (to >= from ? to - from : (uint16_t)(count - from + to));
+        return (to >= from ? to - from : (u16)(count - from + to));
 }
 
 /* -----------------------------------------------------------------------
@@ -195,7 +195,7 @@ idpf_ring_delta(uint16_t from, uint16_t to, uint16_t count)
 #define IDPF_MAX_TX_FRAGS               35      /* [PROPOSED:A38] */
 
 #define IDPF_MIN_TX_DESC_NEEDED         (IDPF_MAX_TX_FRAGS + 6)
-#define IDPF_TX_WAKE_THRESH             ((uint16_t)(IDPF_MIN_TX_DESC_NEEDED * 2))
+#define IDPF_TX_WAKE_THRESH             ((u16)(IDPF_MIN_TX_DESC_NEEDED * 2))
 
 #define IDPF_MAX_DESCS                  8160
 #define IDPF_MAX_TXQ_DESC \
@@ -462,10 +462,10 @@ struct idpf_tx_buf {
         struct mbuf     *mbuf;          /* owned mbuf; NULL when empty */
         bus_addr_t       dma;           /* DMA address of first segment */
         bus_dmamap_t     map;           /* busdma map for this buffer */
-        uint32_t         bytecount;     /* bytes in this buffer */
-        uint16_t         gso_segs;      /* GSO segment count */
+        u32         bytecount;     /* bytes in this buffer */
+        u16         gso_segs;      /* GSO segment count */
         enum idpf_sqe_type type;        /* SQE type */
-        uint32_t         priv;          /* next-buffer linkage (splitq) */
+        u32         priv;          /* next-buffer linkage (splitq) */
 };
 
 /* -----------------------------------------------------------------------
@@ -480,15 +480,15 @@ union idpf_tx_flex_desc {
  * struct idpf_tx_offload_params  [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 struct idpf_tx_offload_params {
-        uint32_t tx_flags;
-        uint32_t hdr_offsets;
-        uint32_t cd_tunneling;
-        uint32_t tso_len;
-        uint16_t mss;
-        uint16_t tso_segs;
-        uint16_t tso_hdr_len;
-        uint16_t td_cmd;
-        uint8_t  desc_ts[3];    /* flow scheduling timestamp */
+        u32 tx_flags;
+        u32 hdr_offsets;
+        u32 cd_tunneling;
+        u32 tso_len;
+        u16 mss;
+        u16 tso_segs;
+        u16 tso_hdr_len;
+        u16 td_cmd;
+        u8  desc_ts[3];    /* flow scheduling timestamp */
 };
 
 /* -----------------------------------------------------------------------
@@ -496,14 +496,14 @@ struct idpf_tx_offload_params {
  * ----------------------------------------------------------------------- */
 struct idpf_tx_splitq_params {
         enum idpf_tx_desc_dtype_value dtype;
-        uint16_t eop_cmd;
+        u16 eop_cmd;
         union {
-                uint32_t compl_tag;
-                uint16_t td_tag;
+                u32 compl_tag;
+                u16 td_tag;
         };
         struct idpf_tx_offload_params offload;
-        uint16_t prev_ntu;
-        uint16_t prev_refill_ntc;
+        u16 prev_ntu;
+        u16 prev_refill_ntc;
         bool     prev_refill_gen;
 };
 
@@ -517,8 +517,8 @@ struct idpf_reinject_timer {
         struct callout          timer;          /* [FBSD15:A33] */
         struct idpf_queue      *txq;
         struct mbuf            *mbuf;           /* [FBSD15:A30] */
-        uint32_t                bytes;
-        uint16_t                gso_segs;
+        u32                bytes;
+        u16                gso_segs;
 };
 
 /* TAILQ head for reinject timer list (replaces struct xarray reinject_timers) */
@@ -544,16 +544,16 @@ enum idpf_tx_ctx_desc_eipt_offload {
  * [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 struct idpf_rx_csum_decoded {
-        uint32_t l3l4p       : 1;
-        uint32_t ipe         : 1;
-        uint32_t eipe        : 1;
-        uint32_t eudpe       : 1;
-        uint32_t ipv6exadd   : 1;
-        uint32_t l4e         : 1;
-        uint32_t pprs        : 1;
-        uint32_t nat         : 1;
-        uint32_t raw_csum_inv: 1;
-        uint32_t raw_csum    : 16;
+        u32 l3l4p       : 1;
+        u32 ipe         : 1;
+        u32 eipe        : 1;
+        u32 eudpe       : 1;
+        u32 ipv6exadd   : 1;
+        u32 l4e         : 1;
+        u32 pprs        : 1;
+        u32 nat         : 1;
+        u32 raw_csum_inv: 1;
+        u32 raw_csum    : 16;
 };
 
 /* -----------------------------------------------------------------------
@@ -562,7 +562,7 @@ struct idpf_rx_csum_decoded {
  * ----------------------------------------------------------------------- */
 struct idpf_rx_extracted {
         unsigned int size;
-        uint16_t     rx_ptype;
+        u16     rx_ptype;
 };
 
 /* -----------------------------------------------------------------------
@@ -642,26 +642,26 @@ enum idpf_tunnel_state {
 struct idpf_ptype_state {
         bool outer_ip;
         bool outer_frag;
-        uint8_t tunnel_state;
+        u8 tunnel_state;
 };
 
 struct idpf_rx_ptype_decoded {
-        uint32_t ptype          : 10;
-        uint32_t known          : 1;
-        uint32_t outer_ip       : 1;
-        uint32_t outer_ip_ver   : 2;
-        uint32_t outer_frag     : 1;
-        uint32_t tunnel_type    : 3;
-        uint32_t tunnel_end_prot: 2;
-        uint32_t tunnel_end_frag: 1;
-        uint32_t inner_prot     : 4;
-        uint32_t payload_layer  : 3;
+        u32 ptype          : 10;
+        u32 known          : 1;
+        u32 outer_ip       : 1;
+        u32 outer_ip_ver   : 2;
+        u32 outer_frag     : 1;
+        u32 tunnel_type    : 3;
+        u32 tunnel_end_prot: 2;
+        u32 tunnel_end_frag: 1;
+        u32 inner_prot     : 4;
+        u32 payload_layer  : 3;
 };
 
 /* -----------------------------------------------------------------------
  * enum idpf_queue_flags_t — per-queue state flags.
  *
- * DECLARE_BITMAP replaced by uint32_t in struct idpf_queue.
+ * DECLARE_BITMAP replaced by u32 in struct idpf_queue.
  * XDP flag removed.  ETF flag retained (CONDITIONAL — feature 250).
  * [LOCAL:A25] [PROPOSED:A38]
  * ----------------------------------------------------------------------- */
@@ -678,10 +678,10 @@ enum idpf_queue_flags_t {
 };
 
 _Static_assert(__IDPF_Q_FLAGS_NBITS <= 32,
-    "idpf_queue_flags_t exceeds uint32_t width");
+    "idpf_queue_flags_t exceeds u32 width");
 
 /*
- * Queue flag accessors operating on a uint32_t flags field.
+ * Queue flag accessors operating on a u32 flags field.
  * Linux __set_bit / __clear_bit / test_bit / test_and_clear_bit /
  * __change_bit / __assign_bit replaced by plain bit operations.
  * [FBSD15:A32]
@@ -703,9 +703,9 @@ _Static_assert(__IDPF_Q_FLAGS_NBITS <= 32,
  * struct idpf_vec_regs — vector register offsets  [IDPF:A13-A14]
  * ----------------------------------------------------------------------- */
 struct idpf_vec_regs {
-        uint32_t dyn_ctl_reg;
-        uint32_t itrn_reg;
-        uint32_t itrn_index_spacing;
+        u32 dyn_ctl_reg;
+        u32 itrn_reg;
+        u32 itrn_index_spacing;
 };
 
 /* -----------------------------------------------------------------------
@@ -719,15 +719,15 @@ struct idpf_intr_reg {
         void    *rx_itr;                /* RX ITR register */
         void    *tx_itr;                /* TX ITR register */
         void    *icr_ena;               /* interrupt cause enable register */
-        uint32_t icr_ena_ctlq_m;
-        uint32_t dyn_ctl_intena_msk_m;
-        uint32_t dyn_ctl_wb_on_itr_m;
-        uint32_t dyn_ctl_sw_itridx_ena_m;
-        uint32_t dyn_ctl_swint_trig_m;
-        uint8_t  dyn_ctl_itridx_m   : 5;
-        uint8_t  dyn_ctl_intrvl_s   : 3;
-        uint8_t  dyn_ctl_itridx_s   : 2;
-        uint8_t  dyn_ctl_intena_m   : 1;
+        u32 icr_ena_ctlq_m;
+        u32 dyn_ctl_intena_msk_m;
+        u32 dyn_ctl_wb_on_itr_m;
+        u32 dyn_ctl_sw_itridx_ena_m;
+        u32 dyn_ctl_swint_trig_m;
+        u8  dyn_ctl_itridx_m   : 5;
+        u8  dyn_ctl_intrvl_s   : 3;
+        u8  dyn_ctl_itridx_s   : 2;
+        u8  dyn_ctl_intena_m   : 1;
 };
 
 /* -----------------------------------------------------------------------
@@ -741,65 +741,65 @@ struct idpf_intr_reg {
  * ----------------------------------------------------------------------- */
 struct idpf_q_vector {
         struct idpf_vport       *vport;
-        uint16_t                 v_idx;
+        u16                 v_idx;
         struct idpf_intr_reg     intr_reg;
         bool                     wb_on_itr;
 
         /* iflib IRQ handle bound in ifdi_msix_intr_assign(). [FBSD15:A34] */
 	struct if_irq            que_irq;
-        uint16_t                 num_txq;
+        u16                 num_txq;
         struct idpf_queue      **tx;
-        uint32_t                 tx_itr_value;
+        u32                 tx_itr_value;
         bool                     tx_intr_mode;
-        uint32_t                 tx_itr_idx;
+        u32                 tx_itr_idx;
 
-        uint16_t                 num_rxq;
+        u16                 num_rxq;
         struct idpf_queue      **rx;
-        uint32_t                 rx_itr_value;
+        u32                 rx_itr_value;
         bool                     rx_intr_mode;
-        uint32_t                 rx_itr_idx;
+        u32                 rx_itr_idx;
 
-        uint16_t                 num_bufq;
+        u16                 num_bufq;
         struct idpf_queue      **bufq;
 
-        uint16_t                 total_events;
+        u16                 total_events;
         char                    *name;
 };
 
 /* -----------------------------------------------------------------------
  * Queue statistics  [IDPF:A13-A14]
  *
- * u64_stats_sync removed; counters are plain uint64_t protected by the
+ * u64_stats_sync removed; counters are plain u64 protected by the
  * per-port stats_lock (struct mtx) in idpf_port_stats.  [FBSD15:A32]
  * CONFIG_TX_TIMEOUT_VERBOSE fields removed.
  * ----------------------------------------------------------------------- */
 struct idpf_rx_queue_stats {
-        uint64_t packets;
-        uint64_t bytes;
-        uint64_t rsc_pkts;
-        uint64_t hw_csum_err;
-        uint64_t hsplit_pkts;
-        uint64_t hsplit_buf_ovf;
-        uint64_t bad_descs;
-        uint64_t page_recycles;
-        uint64_t page_reallocs;
-        uint64_t rsc_bytes;
-        uint64_t rsc_segs_tot;
-        uint64_t segs[IDPF_MAX_SEGS];
+        u64 packets;
+        u64 bytes;
+        u64 rsc_pkts;
+        u64 hw_csum_err;
+        u64 hsplit_pkts;
+        u64 hsplit_buf_ovf;
+        u64 bad_descs;
+        u64 page_recycles;
+        u64 page_reallocs;
+        u64 rsc_bytes;
+        u64 rsc_segs_tot;
+        u64 segs[IDPF_MAX_SEGS];
 };
 
 struct idpf_tx_queue_stats {
-        uint64_t packets;
-        uint64_t bytes;
-        uint64_t lso_pkts;
-        uint64_t linearize;
-        uint64_t q_busy;
-        uint64_t skb_drops;
-        uint64_t dma_map_errs;
-        uint64_t tstamp_skipped;
-        uint64_t lso_bytes;
-        uint64_t lso_segs_tot;
-        uint64_t segs[IDPF_MAX_SEGS];
+        u64 packets;
+        u64 bytes;
+        u64 lso_pkts;
+        u64 linearize;
+        u64 q_busy;
+        u64 skb_drops;
+        u64 dma_map_errs;
+        u64 tstamp_skipped;
+        u64 lso_bytes;
+        u64 lso_segs_tot;
+        u64 segs[IDPF_MAX_SEGS];
 };
 
 union idpf_queue_stats {
@@ -810,16 +810,16 @@ union idpf_queue_stats {
 /* -----------------------------------------------------------------------
  * struct idpf_sw_queue — software-only refill queue (splitq).
  *
- * DECLARE_BITMAP replaced by uint32_t flags.
+ * DECLARE_BITMAP replaced by u32 flags.
  * ____cacheline_internodealigned_in_smp replaced by __aligned(CACHE_LINE_SIZE).
  * [FBSD15:A32] [LOCAL:A25]
  * ----------------------------------------------------------------------- */
 struct idpf_sw_queue {
-        uint32_t *ring;
-        uint32_t  flags;        /* idpf_queue_flags_t bits */
-        uint32_t  desc_count;
-        uint32_t  next_to_use;
-        uint32_t  next_to_clean;
+        u32 *ring;
+        u32  flags;        /* idpf_queue_flags_t bits */
+        u32  desc_count;
+        u32  next_to_use;
+        u32  next_to_clean;
 } __aligned(CACHE_LINE_SIZE);
 
 /* -----------------------------------------------------------------------
@@ -833,8 +833,8 @@ struct idpf_page_info {
         vm_page_t       page;           /* [FBSD15:A31] */
         unsigned int    page_offset;
         unsigned int    default_offset;
-        uint16_t        pagecnt_bias;
-        uint8_t         reuse_bias;
+        u16        pagecnt_bias;
+        u8         reuse_bias;
 };
 
 /* -----------------------------------------------------------------------
@@ -848,8 +848,8 @@ struct idpf_page_info {
 struct idpf_rx_buf {
 #define IDPF_RX_BUF_MAX_PAGES   2
         struct idpf_page_info   page_info[IDPF_RX_BUF_MAX_PAGES];
-        uint8_t                 page_indx;
-        uint16_t                buf_size;
+        u8                 page_indx;
+        u16                buf_size;
         struct mbuf            *mbuf;   /* [FBSD15:A30] */
         bus_dmamap_t            map;    /* busdma map for this buffer [FBSD15:A31] */
 };
@@ -862,12 +862,12 @@ struct idpf_rx_buf {
  * struct sk_buff * replaced by struct mbuf *.
  * dma_addr_t replaced by bus_addr_t.
  * void __iomem *tail replaced by void * (bus_space accessor model).
- * DECLARE_BITMAP replaced by uint32_t flags.
+ * DECLARE_BITMAP replaced by u32 flags.
  * u64_stats_sync removed; stats protected by port stats_lock.
  * struct work_struct *tstamp_task replaced by struct task *.
  * XDP / AF_XDP fields removed.
  * struct xarray reinject_timers replaced by TAILQ head + struct mtx.
- * __be16 vlan_proto replaced by uint16_t (big-endian stored explicitly).
+ * __be16 vlan_proto replaced by u16 (big-endian stored explicitly).
  * ____cacheline_internodealigned_in_smp replaced by __aligned(CACHE_LINE_SIZE).
  * [FBSD15:A30-A34] [LOCAL:A25] [PROPOSED:A38]
  * ----------------------------------------------------------------------- */
@@ -885,11 +885,11 @@ struct idpf_queue {
                 struct {
                         struct idpf_tx_buf      *bufs;
                         struct idpf_sw_queue    *refillq;
-                        uint32_t                 num_completions;
-                        uint32_t                 rel_qid;
-                        uint16_t                 num_txq;
-                        uint16_t                 last_re;
-                        uint8_t                  cmpl_tstamp_ns_s;
+                        u32                 num_completions;
+                        u32                 rel_qid;
+                        u16                 num_txq;
+                        u16                 last_re;
+                        u8                  cmpl_tstamp_ns_s;
                 } tx;
                 struct {
                         union {
@@ -900,14 +900,14 @@ struct idpf_queue {
                                 };
                                 struct {
                                         struct idpf_rx_buf **bufq_bufs;
-                                        uint64_t           **bufq_hdr_bufs;
+                                        u64           **bufq_hdr_bufs;
                                         struct mbuf         *mbuf; /* [FBSD15:A30] */
                                 };
                         };
                         struct idpf_sw_queue    *refillqs;
                         int                      num_refillq;
-                        uint16_t                 rxq_idx;
-                        uint16_t                 vlan_proto; /* big-endian stored */
+                        u16                 rxq_idx;
+                        u16                 vlan_proto; /* big-endian stored */
                 } rx;
         };
 
@@ -917,11 +917,11 @@ struct idpf_queue {
          */
         struct task                             *tstamp_task;
         struct idpf_ptp_vport_tx_tstamp_caps    *cached_tstamp_caps;
-        uint64_t                                *cached_phc_time;
+        u64                                *cached_phc_time;
         bool                                     tstmp_en;
 
-        uint16_t                 idx;
-        uint8_t                  gen_rxcsum_status;
+        u16                 idx;
+        u8                  gen_rxcsum_status;
 
         /*
          * tail: mapped tail doorbell register address.
@@ -931,36 +931,36 @@ struct idpf_queue {
          */
         void                    *tail;
 
-        uint16_t                 q_type;
-        uint32_t                 q_id;
-        uint16_t                 desc_count;
-        uint16_t                 next_to_use;
-        uint16_t                 next_to_clean;
-        uint16_t                 next_to_alloc;
+        u16                 q_type;
+        u32                 q_id;
+        u16                 desc_count;
+        u16                 next_to_use;
+        u16                 next_to_clean;
+        u16                 next_to_alloc;
 
-        uint32_t                 flags;         /* idpf_queue_flags_t bits */
+        u32                 flags;         /* idpf_queue_flags_t bits */
 
         union idpf_queue_stats   q_stats;
 
-        uint32_t                 cleaned_bytes;
-        uint16_t                 cleaned_pkts;
+        u32                 cleaned_bytes;
+        u16                 cleaned_pkts;
         bool                     rx_hsplit_en;
-        uint16_t                 rx_hbuf_size;
-        uint16_t                 rx_buf_size;
-        uint16_t                 rx_max_pkt_size;
-        uint16_t                 rx_buf_stride;
-        uint8_t                  rx_buffer_low_watermark;
-        uint64_t                 rxdids;
+        u16                 rx_hbuf_size;
+        u16                 rx_buf_size;
+        u16                 rx_max_pkt_size;
+        u16                 rx_buf_stride;
+        u8                  rx_buffer_low_watermark;
+        u64                 rxdids;
 
         struct idpf_q_vector    *q_vector;
         unsigned int             size;          /* descriptor ring size in bytes */
         bus_addr_t               dma;           /* [FBSD15:A31] */
         void                    *desc_ring;
-        uint32_t                 buf_pool_size;
+        u32                 buf_pool_size;
 
-        uint16_t                 tx_max_bufs;
+        u16                 tx_max_bufs;
         bool                     crc_enable;
-        uint8_t                  tx_min_pkt_len;
+        u8                  tx_min_pkt_len;
 
         struct idpf_rx_ptype_decoded *rx_ptype_lkup;
 
@@ -1001,12 +1001,12 @@ struct idpf_rxq_group {
 
         union {
                 struct {
-                        uint16_t           num_rxq;
+                        u16           num_rxq;
                         struct idpf_queue *rxqs[IDPF_LARGE_MAX_Q];
                 } singleq;
                 struct {
-                        uint16_t              num_rxq_sets;
-                        uint16_t              num_bufq_sets;
+                        u16              num_rxq_sets;
+                        u16              num_bufq_sets;
                         struct idpf_rxq_set  *rxq_sets[IDPF_LARGE_MAX_Q];
                         struct idpf_bufq_set *bufq_sets;
                 } splitq;
@@ -1019,10 +1019,10 @@ struct idpf_rxq_group {
  * ----------------------------------------------------------------------- */
 struct idpf_txq_group {
         struct idpf_vport  *vport;
-        uint16_t            num_txq;
+        u16            num_txq;
         struct idpf_queue **txqs;
         struct idpf_queue  *complq;     /* splitq only */
-        uint32_t            num_completions_pending __aligned(CACHE_LINE_SIZE);
+        u32            num_completions_pending __aligned(CACHE_LINE_SIZE);
 };
 
 /* -----------------------------------------------------------------------
@@ -1036,8 +1036,8 @@ struct idpf_txq_group {
  *
  * Returns updated next_to_clean.  [IDPF:A13-A14]
  */
-static inline uint16_t
-idpf_rx_bump_ntc(struct idpf_queue *rxq, uint16_t ntc)
+static inline u16
+idpf_rx_bump_ntc(struct idpf_queue *rxq, u16 ntc)
 {
         if (__predict_false(++ntc == rxq->desc_count)) {
                 ntc = 0;
@@ -1053,8 +1053,8 @@ idpf_rx_bump_ntc(struct idpf_queue *rxq, uint16_t ntc)
  *
  * Returns updated index.  [IDPF:A13-A14]
  */
-static inline uint16_t
-idpf_singleq_bump_desc_idx(struct idpf_queue *q, uint16_t idx)
+static inline u16
+idpf_singleq_bump_desc_idx(struct idpf_queue *q, u16 idx)
 {
         if (__predict_false(++idx == q->desc_count))
                 idx = 0;
@@ -1070,7 +1070,7 @@ idpf_singleq_bump_desc_idx(struct idpf_queue *q, uint16_t idx)
  */
 static inline bool
 idpf_rx_singleq_test_staterr(const union virtchnl2_rx_desc *rx_desc,
-                               const uint64_t stat_err_bits)
+                               const u64 stat_err_bits)
 {
         return !!(rx_desc->base_wb.qword1.status_error_ptype_len &
                   htole64(stat_err_bits));
@@ -1083,7 +1083,7 @@ idpf_rx_singleq_test_staterr(const union virtchnl2_rx_desc *rx_desc,
  * Large fragments (>= 16 KiB) must be split due to 4 KiB alignment.
  * [IDPF:A13-A14]
  */
-static inline uint32_t
+static inline u32
 idpf_size_to_txd_count(unsigned int size)
 {
         return howmany(size, IDPF_TX_MAX_DESC_DATA_ALIGNED);
@@ -1098,14 +1098,14 @@ idpf_size_to_txd_count(unsigned int size)
  *
  * Returns the 64-bit little-endian descriptor word.  [IDPF:A13-A14]
  */
-static inline uint64_t
-idpf_tx_singleq_build_ctob(uint64_t td_cmd, uint64_t td_offset,
-                             unsigned int size, uint64_t td_tag)
+static inline u64
+idpf_tx_singleq_build_ctob(u64 td_cmd, u64 td_offset,
+                             unsigned int size, u64 td_tag)
 {
         return htole64(IDPF_TX_DESC_DTYPE_DATA |
                        (td_cmd    << IDPF_TXD_QW1_CMD_S)       |
                        (td_offset << IDPF_TXD_QW1_OFFSET_S)    |
-                       ((uint64_t)size << IDPF_TXD_QW1_TX_BUF_SZ_S) |
+                       ((u64)size << IDPF_TXD_QW1_TX_BUF_SZ_S) |
                        (td_tag    << IDPF_TXD_QW1_L2TAG1_S));
 }
 
@@ -1136,10 +1136,10 @@ idpf_tx_splitq_need_re(struct idpf_queue *tx_q)
  * FIELD_GET(IDPF_RFL_BI_BUFID_M, refill_desc) replaced by explicit mask.
  */
 static inline bool
-idpf_tx_get_free_buf_id(struct idpf_sw_queue *refillq, uint32_t *buf_id)
+idpf_tx_get_free_buf_id(struct idpf_sw_queue *refillq, u32 *buf_id)
 {
-        uint32_t ntc = refillq->next_to_clean;
-        uint32_t refill_desc;
+        u32 ntc = refillq->next_to_clean;
+        u32 refill_desc;
 
         refill_desc = refillq->ring[ntc];
 
@@ -1162,7 +1162,7 @@ idpf_tx_get_free_buf_id(struct idpf_sw_queue *refillq, uint32_t *buf_id)
  * @refillq: refill queue
  * [IDPF:A13-A14]
  */
-static inline uint32_t
+static inline u32
 idpf_tx_splitq_get_free_bufs(struct idpf_sw_queue *refillq)
 {
         return (refillq->next_to_use > refillq->next_to_clean ?
@@ -1179,10 +1179,10 @@ idpf_tx_splitq_get_free_bufs(struct idpf_sw_queue *refillq)
 /* Descriptor build helpers */
 void idpf_tx_splitq_build_ctb(union idpf_tx_flex_desc *desc,
                                struct idpf_tx_splitq_params *params,
-                               uint16_t td_cmd, uint16_t size);
+                               u16 td_cmd, u16 size);
 void idpf_tx_splitq_build_flow_desc(union idpf_tx_flex_desc *desc,
                                      struct idpf_tx_splitq_params *params,
-                                     uint16_t td_cmd, uint16_t size);
+                                     u16 td_cmd, u16 size);
 
 /**
  * idpf_tx_splitq_build_desc - select and build the appropriate TX descriptor.
@@ -1195,7 +1195,7 @@ void idpf_tx_splitq_build_flow_desc(union idpf_tx_flex_desc *desc,
 static inline void
 idpf_tx_splitq_build_desc(union idpf_tx_flex_desc *desc,
                            struct idpf_tx_splitq_params *params,
-                           uint16_t td_cmd, uint16_t size)
+                           u16 td_cmd, u16 size)
 {
         if (params->dtype == IDPF_TX_DESC_DTYPE_FLEX_L2TAG1_L2TAG2)
                 idpf_tx_splitq_build_ctb(desc, params, td_cmd, size);
@@ -1210,7 +1210,7 @@ void idpf_vport_init_num_qs(struct idpf_vport *vport,
 void idpf_vport_calc_num_q_desc(struct idpf_vport *vport,
                                   struct idpf_q_vec_rsrc *rsrc);
 void idpf_vport_calc_total_qs(struct idpf_adapter *adapter,
-                                uint16_t vport_index,
+                                u16 vport_index,
                                 struct virtchnl2_create_vport *vport_msg,
                                 struct idpf_vport_max_q *max_q);
 void idpf_vport_calc_num_q_groups(struct idpf_q_vec_rsrc *rsrc);
@@ -1218,7 +1218,7 @@ int  idpf_vport_queue_alloc_all(struct idpf_vport *vport,
                                   struct idpf_q_vec_rsrc *rsrc);
 void idpf_vport_queues_rel(struct idpf_vport *vport,
                              struct idpf_q_vec_rsrc *rsrc);
-void idpf_vport_set_rx_frame_size(struct idpf_q_vec_rsrc *rsrc, uint32_t mtu);
+void idpf_vport_set_rx_frame_size(struct idpf_q_vec_rsrc *rsrc, u32 mtu);
 
 /*
  * RX buffer management is owned by iflib.  The Linux refill-queue helpers
@@ -1244,10 +1244,10 @@ void idpf_vport_intr_set_wb_on_itr(struct idpf_q_vector *q_vector);
 /*
  * idpf_ptype_to_htype - translate IDPF PTYPE to FreeBSD hash type.
  *
- * Linux pkt_hash_types replaced by uint32_t (M_HASHTYPE_* values from
+ * Linux pkt_hash_types replaced by u32 (M_HASHTYPE_* values from
  * FreeBSD <sys/mbuf.h>).  [FBSD15:A30]
  */
-uint32_t idpf_ptype_to_htype(const struct idpf_rx_ptype_decoded *decoded);
+u32 idpf_ptype_to_htype(const struct idpf_rx_ptype_decoded *decoded);
 
 /* RSS */
 int  idpf_config_rss(struct idpf_vport *vport,
@@ -1258,8 +1258,8 @@ int  idpf_init_rss(struct idpf_vport *vport,
 void idpf_deinit_rss(struct idpf_rss_data *rss_data);
 
 /* Hardware tail update helpers */
-void idpf_rx_buf_hw_update(struct idpf_queue *rxq, uint32_t val);
-void idpf_tx_buf_hw_update(struct idpf_queue *tx_q, uint32_t val,
+void idpf_rx_buf_hw_update(struct idpf_queue *rxq, u32 val);
+void idpf_tx_buf_hw_update(struct idpf_queue *tx_q, u32 val,
                              bool xmit_more);
 
 /*
@@ -1288,23 +1288,23 @@ void idpf_tx_timeout(struct idpf_adapter *adapter, unsigned int txqueue);
 extern struct if_txrx idpf_txrx_ops;
 
 /* ifdi_{tx,rx}_queues_alloc / ifdi_queues_free */
-int  idpf_tx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
+int  idpf_tx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, u64 *paddrs,
                             int ntxqs, int ntxqsets);
-int  idpf_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, uint64_t *paddrs,
+int  idpf_rx_queues_alloc(if_ctx_t ctx, caddr_t *vaddrs, u64 *paddrs,
                             int nrxqs, int nrxqsets);
 void idpf_queues_free(if_ctx_t ctx);
 
 /* ifdi_intr_enable / ifdi_intr_disable / ifdi_{tx,rx}_queue_intr_enable */
 void idpf_intr_enable(if_ctx_t ctx);
 void idpf_intr_disable(if_ctx_t ctx);
-int  idpf_tx_queue_intr_enable(if_ctx_t ctx, uint16_t txqid);
-int  idpf_rx_queue_intr_enable(if_ctx_t ctx, uint16_t rxqid);
+int  idpf_tx_queue_intr_enable(if_ctx_t ctx, u16 txqid);
+int  idpf_rx_queue_intr_enable(if_ctx_t ctx, u16 rxqid);
 
 /* -----------------------------------------------------------------------
  * Shared RX decode helpers (idpf_txrx.c), used by both queue models.
  * ----------------------------------------------------------------------- */
 const struct idpf_rx_ptype_decoded *idpf_rx_decode_ptype(struct idpf_queue *rxq,
-                                                          uint16_t ptype);
+                                                          u16 ptype);
 void idpf_rx_csum(struct idpf_queue *rxq, if_rxd_info_t ri,
                    const struct idpf_rx_csum_decoded *csum_bits,
                    const struct idpf_rx_ptype_decoded *decoded);

@@ -23,6 +23,8 @@
 #include <sys/endian.h>
 #include <sys/systm.h>
 
+#include "idpf_types.h"
+
 #include <machine/atomic.h>
 #include <machine/bus.h>
 
@@ -37,55 +39,55 @@ struct idpf_dma_mem {
 };
 
 void *idpf_alloc_dma_mem(struct idpf_hw *hw, struct idpf_dma_mem *mem,
-    uint64_t size);
+    u64 size);
 void idpf_free_dma_mem(struct idpf_hw *hw, struct idpf_dma_mem *mem);
 
 static inline void
-idpf_mmio_wr32(void *addr, uint32_t value)
+idpf_mmio_wr32(void *addr, u32 value)
 {
 
 	atomic_thread_fence_rel();
-	*(volatile uint32_t *)addr = htole32(value);
+	*(volatile u32 *)addr = htole32(value);
 }
 
-static inline uint32_t
+static inline u32
 idpf_mmio_rd32(void *addr)
 {
-	uint32_t value;
+	u32 value;
 
-	value = le32toh(*(volatile uint32_t *)addr);
+	value = le32toh(*(volatile u32 *)addr);
 	atomic_thread_fence_acq();
 
 	return (value);
 }
 
 static inline void
-idpf_mmio_wr64(void *addr, uint64_t value)
+idpf_mmio_wr64(void *addr, u64 value)
 {
 
 	atomic_thread_fence_rel();
-	*(volatile uint64_t *)addr = htole64(value);
+	*(volatile u64 *)addr = htole64(value);
 }
 
-static inline uint64_t
+static inline u64
 idpf_mmio_rd64(void *addr)
 {
-	uint64_t value;
+	u64 value;
 
-	value = le64toh(*(volatile uint64_t *)addr);
+	value = le64toh(*(volatile u64 *)addr);
 	atomic_thread_fence_acq();
 
 	return (value);
 }
 
 #define idpf_mbx_wr32(a, reg, value) \
-	idpf_mmio_wr32((uint8_t *)(a)->mbx.vaddr + (reg), (value))
+	idpf_mmio_wr32((u8 *)(a)->mbx.vaddr + (reg), (value))
 #define idpf_mbx_rd32(a, reg) \
-	idpf_mmio_rd32((uint8_t *)(a)->mbx.vaddr + (reg))
+	idpf_mmio_rd32((u8 *)(a)->mbx.vaddr + (reg))
 #define idpf_mbx_wr64(a, reg, value) \
-	idpf_mmio_wr64((uint8_t *)(a)->mbx.vaddr + (reg), (value))
+	idpf_mmio_wr64((u8 *)(a)->mbx.vaddr + (reg), (value))
 #define idpf_mbx_rd64(a, reg) \
-	idpf_mmio_rd64((uint8_t *)(a)->mbx.vaddr + (reg))
+	idpf_mmio_rd64((u8 *)(a)->mbx.vaddr + (reg))
 
 #define wr32(a, reg, value)	idpf_mbx_wr32(a, reg, value)
 #define rd32(a, reg)		idpf_mbx_rd32(a, reg)

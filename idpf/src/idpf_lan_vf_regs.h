@@ -12,18 +12,18 @@
  * header in the same translation unit already supplied them.
  */
 #ifndef BIT
-#define BIT(n)			((uint32_t)1U << (n))
+#define BIT(n)			((u32)1U << (n))
 #endif
 #ifndef BIT_ULL
-#define BIT_ULL(n)		((uint64_t)1ULL << (n))
+#define BIT_ULL(n)		((u64)1ULL << (n))
 #endif
 #ifndef GENMASK
 #define GENMASK(h, l)		\
-	((uint32_t)((~0U >> (31 - (h))) & (~0U << (l))))
+	((u32)((~0U >> (31 - (h))) & (~0U << (l))))
 #endif
 #ifndef GENMASK_ULL
 #define GENMASK_ULL(h, l)	\
-	((uint64_t)((~0ULL >> (63 - (h))) & (~0ULL << (l))))
+	((u64)((~0ULL >> (63 - (h))) & (~0ULL << (l))))
 #endif
 
 /* Reset */

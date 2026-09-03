@@ -37,13 +37,13 @@
  *
  * Returns the 64-bit nanosecond value nearest @cached_phc_time.
  */
-uint64_t
-idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
-    uint32_t in_timestamp)
+u64
+idpf_ptp_tstamp_extend_32b_to_64b(u64 cached_phc_time,
+    u32 in_timestamp)
 {
-	uint32_t delta, phc_time_lo;
+	u32 delta, phc_time_lo;
 
-	phc_time_lo = (uint32_t)cached_phc_time;
+	phc_time_lo = (u32)cached_phc_time;
 	delta = in_timestamp - phc_time_lo;
 
 	/* A delta past the half-range means the low word wrapped backwards. */
@@ -64,7 +64,7 @@ idpf_ptp_tstamp_extend_32b_to_64b(uint64_t cached_phc_time,
  * BAR region.
  */
 static void *
-idpf_ptp_reg_addr(struct idpf_adapter *adapter, uint32_t reg_offset)
+idpf_ptp_reg_addr(struct idpf_adapter *adapter, u32 reg_offset)
 {
 	struct idpf_hw *hw = &adapter->hw;
 	int i;
@@ -76,7 +76,7 @@ idpf_ptp_reg_addr(struct idpf_adapter *adapter, uint32_t reg_offset)
 		struct idpf_mmio_reg *region = &hw->lan_regs[i];
 
 		if (idpf_reg_offset_in_region(region, reg_offset))
-			return ((uint8_t *)region->vaddr +
+			return ((u8 *)region->vaddr +
 			    (reg_offset - region->addr_start));
 	}
 
@@ -94,11 +94,11 @@ idpf_ptp_reg_addr(struct idpf_adapter *adapter, uint32_t reg_offset)
  * carry.  Returns EIO if either offset is unmapped.
  */
 static int
-idpf_ptp_rd64_split(struct idpf_adapter *adapter, uint32_t lo, uint32_t hi,
-    uint64_t *val)
+idpf_ptp_rd64_split(struct idpf_adapter *adapter, u32 lo, u32 hi,
+    u64 *val)
 {
 	void *lo_addr, *hi_addr;
-	uint32_t hi1, hi2, lo32;
+	u32 hi1, hi2, lo32;
 	int retry;
 
 	lo_addr = idpf_ptp_reg_addr(adapter, lo);
@@ -112,7 +112,7 @@ idpf_ptp_rd64_split(struct idpf_adapter *adapter, uint32_t lo, uint32_t hi,
 		lo32 = idpf_reg_rd32(lo_addr);
 		hi2 = idpf_reg_rd32(hi_addr);
 		if (hi1 == hi2) {
-			*val = ((uint64_t)hi2 << 32) | lo32;
+			*val = ((u64)hi2 << 32) | lo32;
 			return (0);
 		}
 	}
@@ -133,7 +133,7 @@ idpf_ptp_rd64_split(struct idpf_adapter *adapter, uint32_t lo, uint32_t hi,
  * Returns 0 on success or a positive errno.
  */
 static int
-idpf_ptp_send_msg(struct idpf_adapter *adapter, uint32_t op, void *req,
+idpf_ptp_send_msg(struct idpf_adapter *adapter, u32 op, void *req,
     size_t req_len, void *rsp, size_t rsp_len, size_t min_len,
     size_t *reply_len)
 {
@@ -239,8 +239,8 @@ idpf_ptp_get_caps(struct idpf_adapter *adapter)
  * @mailbox: mailbox-access capability bit
  * @have_regs: whether the registers the direct path needs were reported
  */
-static uint8_t
-idpf_ptp_classify(uint32_t caps, uint32_t direct, uint32_t mailbox,
+static u8
+idpf_ptp_classify(u32 caps, u32 direct, u32 mailbox,
     bool have_regs)
 {
 	if ((caps & direct) != 0 && have_regs)
@@ -421,7 +421,7 @@ idpf_ptp_get_vport_tstamps_caps(struct idpf_vport *vport)
 	struct idpf_ptp_vport_tx_tstamp_caps *caps;
 	struct idpf_adapter *adapter;
 	size_t rsp_len, reply_len;
-	uint16_t i, num_latches;
+	u16 i, num_latches;
 	int err;
 
 	if (vport == NULL || vport->adapter == NULL)
@@ -579,7 +579,7 @@ idpf_ptp_get_tstamp_config(struct idpf_vport *vport,
  * @access: enum idpf_ptp_access value
  */
 static const char *
-idpf_ptp_access_str(uint8_t access)
+idpf_ptp_access_str(u8 access)
 {
 	switch (access) {
 	case IDPF_PTP_DIRECT:
@@ -659,7 +659,7 @@ idpf_ptp_sysctl_clock(SYSCTL_HANDLER_ARGS)
 {
 	struct idpf_adapter *adapter = arg1;
 	struct idpf_ptp_dev_timers timers;
-	uint64_t ns;
+	u64 ns;
 	int err;
 
 	err = idpf_ptp_get_dev_clk_time(adapter, &timers);

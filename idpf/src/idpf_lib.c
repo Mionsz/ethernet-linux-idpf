@@ -69,9 +69,9 @@
  * @addr: address to test
  */
 static inline bool
-idpf_is_valid_ether_addr(const uint8_t *addr)
+idpf_is_valid_ether_addr(const u8 *addr)
 {
-	static const uint8_t zero[ETHER_ADDR_LEN];
+	static const u8 zero[ETHER_ADDR_LEN];
 
 	return (!ETHER_IS_MULTICAST(addr) &&
 	    memcmp(addr, zero, ETHER_ADDR_LEN) != 0);
@@ -95,8 +95,8 @@ static int
 idpf_init_vector_stack(struct idpf_adapter *adapter)
 {
 	struct idpf_vector_lifo *stack;
-	uint16_t min_vec;
-	uint32_t i;
+	u16 min_vec;
+	u32 i;
 
 	sx_xlock(&adapter->vector_lock);
 
@@ -149,7 +149,7 @@ idpf_deinit_vector_stack(struct idpf_adapter *adapter)
  * Return: 0 on success, EINVAL when the stack is already full.
  */
 static int
-idpf_vector_lifo_push(struct idpf_adapter *adapter, uint16_t vec_idx)
+idpf_vector_lifo_push(struct idpf_adapter *adapter, u16 vec_idx)
 {
 	struct idpf_vector_lifo *stack = &adapter->vector_stack;
 
@@ -195,11 +195,11 @@ idpf_vector_lifo_pop(struct idpf_adapter *adapter)
  * @vec_info: how many vectors the caller currently holds
  */
 static void
-idpf_vector_stash(struct idpf_adapter *adapter, uint16_t *q_vector_idxs,
+idpf_vector_stash(struct idpf_adapter *adapter, u16 *q_vector_idxs,
     struct idpf_vector_info *vec_info)
 {
 	int i, base = 0;
-	uint16_t vec_idx;
+	u16 vec_idx;
 
 	sx_assert(&adapter->vector_lock, SA_XLOCKED);
 
@@ -234,9 +234,9 @@ idpf_vector_stash(struct idpf_adapter *adapter, uint16_t *q_vector_idxs,
  */
 int
 idpf_req_rel_vector_indexes(struct idpf_adapter *adapter,
-    uint16_t *q_vector_idxs, struct idpf_vector_info *vec_info)
+    u16 *q_vector_idxs, struct idpf_vector_info *vec_info)
 {
-	uint16_t num_req_vecs, num_alloc_vecs = 0, max_vecs;
+	u16 num_req_vecs, num_alloc_vecs = 0, max_vecs;
 	struct idpf_vector_lifo *stack;
 	int i, j, vecid;
 
@@ -369,7 +369,7 @@ idpf_mb_intr_clean(void *data)
 
 	/* The ASQ may not be set up yet. */
 	if (adapter->hw.asq != NULL) {
-		uint32_t len;
+		u32 len;
 
 		len = idpf_reg_rd32(idpf_get_mbx_reg_addr(adapter,
 		    adapter->hw.asq->reg.len));
@@ -396,7 +396,7 @@ static void
 idpf_mb_irq_enable(struct idpf_adapter *adapter)
 {
 	struct idpf_intr_reg *intr = &adapter->mb_vector.intr_reg;
-	uint32_t val;
+	u32 val;
 
 	val = intr->dyn_ctl_intena_m | intr->dyn_ctl_itridx_m;
 	idpf_reg_wr32(intr->dyn_ctl, val);
@@ -472,11 +472,11 @@ int
 idpf_intr_req(struct idpf_adapter *adapter)
 {
 	device_t dev = idpf_adapter_to_dev(adapter);
-	uint16_t default_vports = idpf_get_default_vports(adapter);
-	uint16_t num_lan_vecs, min_lan_vecs;
+	u16 default_vports = idpf_get_default_vports(adapter);
+	u16 num_lan_vecs, min_lan_vecs;
 	int num_q_vecs, total_vecs, num_vec_ids;
 	int actual_vecs, err;
-	uint16_t *vecids = NULL;
+	u16 *vecids = NULL;
 	int i, rid;
 
 	total_vecs = idpf_get_reserved_vecs(adapter);
@@ -599,15 +599,15 @@ send_dealloc_vecs:
  */
 bool
 idpf_is_capability_ena(struct idpf_adapter *adapter, bool all,
-    enum idpf_cap_field field, uint64_t flag)
+    enum idpf_cap_field field, u64 flag)
 {
-	uint8_t *caps = (uint8_t *)&adapter->caps;
-	uint64_t *cap_field;
+	u8 *caps = (u8 *)&adapter->caps;
+	u64 *cap_field;
 
 	if (field == IDPF_BASE_CAPS)
 		return (false);
 
-	cap_field = (uint64_t *)(caps + field);
+	cap_field = (u64 *)(caps + field);
 
 	if (all)
 		return ((*cap_field & flag) == flag);
@@ -644,7 +644,7 @@ idpf_dma_map_cb(void *arg, bus_dma_segment_t *segs, int nseg, int error)
  * Return: the mapped virtual address, or NULL.
  */
 void *
-idpf_alloc_dma_mem(struct idpf_hw *hw, struct idpf_dma_mem *mem, uint64_t size)
+idpf_alloc_dma_mem(struct idpf_hw *hw, struct idpf_dma_mem *mem, u64 size)
 {
 	struct idpf_adapter *adapter = hw->back;
 	device_t dev = idpf_adapter_to_dev(adapter);
@@ -719,7 +719,7 @@ idpf_free_dma_mem(struct idpf_hw *hw, struct idpf_dma_mem *mem)
  * Return: the filter, or NULL.
  */
 static struct idpf_mac_filter *
-idpf_find_mac_filter(struct idpf_vport_config *vconfig, const uint8_t *macaddr)
+idpf_find_mac_filter(struct idpf_vport_config *vconfig, const u8 *macaddr)
 {
 	struct idpf_mac_filter *f;
 
@@ -743,7 +743,7 @@ idpf_find_mac_filter(struct idpf_vport_config *vconfig, const uint8_t *macaddr)
  */
 static int
 __idpf_del_mac_filter(struct idpf_vport_config *vport_config,
-    const uint8_t *macaddr)
+    const u8 *macaddr)
 {
 	struct idpf_mac_filter *f;
 
@@ -770,7 +770,7 @@ __idpf_del_mac_filter(struct idpf_vport_config *vport_config,
  */
 static int
 idpf_del_mac_filter(struct idpf_vport *vport, struct idpf_netdev_priv *np,
-    const uint8_t *macaddr, bool async)
+    const u8 *macaddr, bool async)
 {
 	struct idpf_vport_config *vport_config;
 	struct idpf_mac_filter *f;
@@ -807,7 +807,7 @@ idpf_del_mac_filter(struct idpf_vport *vport, struct idpf_netdev_priv *np,
  */
 static int
 __idpf_add_mac_filter(struct idpf_vport_config *vport_config,
-    const uint8_t *macaddr)
+    const u8 *macaddr)
 {
 	struct idpf_mac_filter *f;
 
@@ -846,7 +846,7 @@ __idpf_add_mac_filter(struct idpf_vport_config *vport_config,
  */
 static int
 idpf_add_mac_filter(struct idpf_vport *vport, struct idpf_netdev_priv *np,
-    const uint8_t *macaddr, bool async)
+    const u8 *macaddr, bool async)
 {
 	struct idpf_vport_config *vport_config;
 	int err;
@@ -1156,7 +1156,7 @@ idpf_vport_stop(struct idpf_vport *vport)
 	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
 	struct idpf_adapter *adapter = vport->adapter;
 	struct idpf_queue_id_reg_info *chunks;
-	uint32_t vport_id = vport->vport_id;
+	u32 vport_id = vport->vport_id;
 
 	if ((np->state & (1u << IDPF_VPORT_UP)) == 0)
 		return;
@@ -1209,7 +1209,7 @@ idpf_vport_open(struct idpf_vport *vport)
 	struct idpf_vport_config *vport_config;
 	struct idpf_queue_id_reg_info *chunks;
 	struct idpf_rss_data *rss_data;
-	uint32_t vport_id = vport->vport_id;
+	u32 vport_id = vport->vport_id;
 	int err;
 
 	if ((np->state & (1u << IDPF_VPORT_UP)) != 0)
@@ -1352,7 +1352,7 @@ idpf_vport_rel(struct idpf_vport *vport)
 	struct idpf_vport_config *vport_config;
 	struct idpf_rss_data *rss_data;
 	struct idpf_vport_max_q max_q;
-	uint16_t idx = vport->idx;
+	u16 idx = vport->idx;
 
 	vport_config = adapter->vport_config[idx];
 	rss_data = &vport_config->user_config.rss_data;
@@ -1451,9 +1451,9 @@ idpf_vport_alloc(struct idpf_adapter *adapter, struct idpf_vport_max_q *max_q)
 {
 	struct idpf_rss_data *rss_data;
 	struct idpf_q_vec_rsrc *rsrc;
-	uint16_t idx = adapter->next_vport;
+	u16 idx = adapter->next_vport;
 	struct idpf_vport *vport;
-	uint16_t num_max_q;
+	u16 num_max_q;
 	int i, err;
 
 	if (idx == IDPF_NO_FREE_SLOT) {
@@ -1518,7 +1518,7 @@ idpf_vport_alloc(struct idpf_adapter *adapter, struct idpf_vport_max_q *max_q)
 
 	rsrc = &vport->dflt_qv_rsrc;
 	rsrc->dev = idpf_adapter_to_dev(adapter);
-	rsrc->q_vector_idxs = malloc(num_max_q * sizeof(uint16_t), M_DEVBUF,
+	rsrc->q_vector_idxs = malloc(num_max_q * sizeof(u16), M_DEVBUF,
 	    M_NOWAIT | M_ZERO);
 	if (rsrc->q_vector_idxs == NULL)
 		goto free_vport;
@@ -1687,7 +1687,7 @@ idpf_sysctl_vport_stat(SYSCTL_HANDLER_ARGS)
 	struct idpf_adapter *adapter = arg1;
 	size_t off = (size_t)arg2;
 	struct idpf_vport *vport;
-	uint64_t val = 0;
+	u64 val = 0;
 
 	if (adapter == NULL || adapter->vports == NULL)
 		return (ENXIO);
@@ -1862,6 +1862,10 @@ idpf_service_task(void *arg)
 		return;
 	}
 
+	/* Re-arming here would outrun callout_drain() on the detach path. */
+	if ((adapter->flags & (1u << IDPF_REMOVE_IN_PROG)) != 0)
+		return;
+
 	callout_reset(&adapter->serv_task, idpf_msecs_to_ticks(300),
 	    idpf_service_task, adapter);
 }
@@ -1881,7 +1885,7 @@ idpf_init_task(void *arg, int pending __unused)
 	device_t dev = idpf_adapter_to_dev(adapter);
 	struct idpf_vport *vport = NULL;
 	struct idpf_vport_max_q max_q;
-	uint16_t num_default_vports;
+	u16 num_default_vports;
 	bool default_vport;
 	int index, err;
 
@@ -2014,8 +2018,22 @@ idpf_wait_for_func_reset(struct idpf_adapter *adapter)
 	if (adapter->reset_reg.rstat == NULL)
 		return;
 
+	/*
+	 * rstat_m still reads "reset complete" from the previous reset when
+	 * polling starts, so wait for the device to enter reset first;
+	 * otherwise this returns before the reset has even asserted.
+	 */
 	for (i = 0; i < IDPF_RESET_POLL_COUNT; i++) {
-		uint32_t reg_val = idpf_reg_rd32(adapter->reset_reg.rstat);
+		u32 reg_val = idpf_reg_rd32(adapter->reset_reg.rstat);
+
+		if (reg_val == 0xFFFFFFFF ||
+		    (reg_val & adapter->reset_reg.rstat_m) == 0)
+			break;
+		DELAY(1000);
+	}
+
+	for (i = 0; i < IDPF_RESET_POLL_COUNT; i++) {
+		u32 reg_val = idpf_reg_rd32(adapter->reset_reg.rstat);
 
 		if (reg_val != 0xFFFFFFFF &&
 		    (reg_val & adapter->reset_reg.rstat_m) != 0)
@@ -2061,7 +2079,7 @@ idpf_check_reset_complete(struct idpf_adapter *adapter)
 	}
 
 	for (i = 0; i < IDPF_RESET_POLL_COUNT; i++) {
-		uint32_t reg_val = idpf_reg_rd32(adapter->reset_reg.rstat);
+		u32 reg_val = idpf_reg_rd32(adapter->reset_reg.rstat);
 
 		/* Do not keep the removal path waiting. */
 		if ((adapter->flags & (1u << IDPF_REMOVE_IN_PROG)) != 0)
@@ -2098,7 +2116,7 @@ idpf_check_reset_complete(struct idpf_adapter *adapter)
 static int
 idpf_wait_on_reset_detection(struct idpf_adapter *adapter)
 {
-	uint16_t i;
+	u16 i;
 
 	for (i = 0; i < IDPF_RESET_POLL_COUNT; i++) {
 		if (idpf_is_reset_detected(adapter))
@@ -2235,7 +2253,7 @@ idpf_initiate_soft_reset(struct idpf_vport *vport,
 	struct idpf_q_vec_rsrc *new_rsrc;
 	struct idpf_rss_data *rss_data;
 	struct idpf_vport *new_vport;
-	uint32_t vport_id = vport->vport_id;
+	u32 vport_id = vport->vport_id;
 	int err, tmp_err = 0;
 
 	/*
@@ -2451,14 +2469,14 @@ idpf_vport_manage_rss_lut(struct idpf_vport *vport)
 	bool ena = idpf_is_cap_ena_all(vport->adapter, IDPF_RSS_CAPS,
 	    IDPF_CAP_RSS);
 	struct idpf_rss_data *rss_data;
-	uint16_t idx = vport->idx;
+	u16 idx = vport->idx;
 	int lut_size;
 
 	if (!vport->link_up)
 		return (0);
 
 	rss_data = &vport->adapter->vport_config[idx]->user_config.rss_data;
-	lut_size = rss_data->rss_lut_size * sizeof(uint32_t);
+	lut_size = rss_data->rss_lut_size * sizeof(u32);
 
 	if (ena) {
 		memcpy(rss_data->rss_lut, rss_data->cached_lut, lut_size);
@@ -2607,7 +2625,7 @@ idpf_if_update_admin_status(if_ctx_t ctx)
  * Return: 0 on success, EINVAL when out of range.
  */
 static int
-idpf_if_mtu_set(if_ctx_t ctx, uint32_t mtu)
+idpf_if_mtu_set(if_ctx_t ctx, u32 mtu)
 {
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 	struct idpf_vport *vport = np->vport;
@@ -2682,7 +2700,7 @@ idpf_multi_set_cb(void *arg, struct sockaddr_dl *sdl, u_int count __unused)
 	struct idpf_vport *vport = arg;
 	struct idpf_netdev_priv *np = iflib_get_softc(vport->ctx);
 
-	idpf_add_mac_filter(vport, np, (uint8_t *)LLADDR(sdl), true);
+	idpf_add_mac_filter(vport, np, (u8 *)LLADDR(sdl), true);
 
 	return (1);
 }
@@ -2716,7 +2734,7 @@ idpf_if_multi_set(if_ctx_t ctx)
  * admin path.
  */
 static void
-idpf_if_timer(if_ctx_t ctx, uint16_t qid)
+idpf_if_timer(if_ctx_t ctx, u16 qid)
 {
 
 	if (qid != 0)
@@ -2732,12 +2750,12 @@ idpf_if_timer(if_ctx_t ctx, uint16_t qid)
  *
  * Return: the counter value.
  */
-static uint64_t
+static u64
 idpf_if_get_counter(if_ctx_t ctx, ift_counter cnt)
 {
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 	if_t ifp = iflib_get_ifp(ctx);
-	uint64_t val;
+	u64 val;
 
 	/* The emulation platform does not implement the statistics message. */
 	if (IS_EMR_DEVICE(np->adapter->hw.subsystem_device_id))
@@ -2882,7 +2900,7 @@ idpf_if_media_change(if_ctx_t ctx __unused)
  * @vtag: VLAN being added
  */
 static void
-idpf_if_vlan_register(if_ctx_t ctx, uint16_t vtag __unused)
+idpf_if_vlan_register(if_ctx_t ctx, u16 vtag __unused)
 {
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 
@@ -2896,7 +2914,7 @@ idpf_if_vlan_register(if_ctx_t ctx, uint16_t vtag __unused)
  * @vtag: VLAN being removed
  */
 static void
-idpf_if_vlan_unregister(if_ctx_t ctx, uint16_t vtag __unused)
+idpf_if_vlan_unregister(if_ctx_t ctx, u16 vtag __unused)
 {
 	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
 

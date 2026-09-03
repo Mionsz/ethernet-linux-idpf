@@ -110,7 +110,7 @@ static void
 idpf_vf_mb_intr_reg_init(struct idpf_adapter *adapter)
 {
 	struct idpf_intr_reg *intr = &adapter->mb_vector.intr_reg;
-	uint32_t dyn_ctl = le32toh(adapter->caps.mailbox_dyn_ctl);
+	u32 dyn_ctl = le32toh(adapter->caps.mailbox_dyn_ctl);
 
 	intr->dyn_ctl = idpf_get_reg_addr(adapter, dyn_ctl);
 	intr->dyn_ctl_intena_m = VF_INT_DYN_CTL0_INTENA_M;
@@ -133,8 +133,8 @@ idpf_vf_intr_reg_init(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 	int num_vecs = rsrc->num_q_vectors;
 	struct idpf_vec_regs *reg_vals;
 	int num_regs, i, err = 0;
-	uint32_t rx_itr, tx_itr;
-	uint16_t total_vecs;
+	u32 rx_itr, tx_itr;
+	u16 total_vecs;
 
 	total_vecs = idpf_get_reserved_vecs(adapter);
 	reg_vals = malloc(total_vecs * sizeof(*reg_vals), M_DEVBUF,
@@ -150,9 +150,9 @@ idpf_vf_intr_reg_init(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 
 	for (i = 0; i < num_vecs; i++) {
 		struct idpf_q_vector *q_vector = &rsrc->q_vectors[i];
-		uint16_t vec_id = rsrc->q_vector_idxs[i] - IDPF_MBX_Q_VEC;
+		u16 vec_id = rsrc->q_vector_idxs[i] - IDPF_MBX_Q_VEC;
 		struct idpf_intr_reg *intr = &q_vector->intr_reg;
-		uint32_t spacing;
+		u32 spacing;
 
 		intr->dyn_ctl = idpf_get_reg_addr(adapter,
 		    reg_vals[vec_id].dyn_ctl_reg);
