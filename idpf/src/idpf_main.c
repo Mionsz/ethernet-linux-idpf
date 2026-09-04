@@ -34,6 +34,7 @@
 #include <sys/param.h>
 #include <sys/systm.h>
 #include <sys/bus.h>
+#include <machine/atomic.h>
 #include <sys/endian.h>
 #include <sys/kernel.h>
 #include <sys/lock.h>
@@ -327,17 +328,16 @@ idpf_alloc_taskqueue(struct idpf_adapter *adapter, struct taskqueue **tqp,
     const char *suffix)
 {
 	device_t dev = idpf_adapter_to_dev(adapter);
-	struct taskqueue *tq;
 
-	tq = taskqueue_create_fast(suffix, M_NOWAIT, taskqueue_thread_enqueue,
+	/* Assign through tqp: it is also the enqueue function's context. */
+	*tqp = taskqueue_create_fast(suffix, M_NOWAIT, taskqueue_thread_enqueue,
 	    tqp);
-	if (tq == NULL)
+	if (*tqp == NULL)
 		return (ENOMEM);
 
-	*tqp = tq;
 	if (taskqueue_start_threads(tqp, 1, PI_NET, "%s %s",
 	    device_get_nameunit(dev), suffix) != 0) {
-		taskqueue_free(tq);
+		taskqueue_free(*tqp);
 		*tqp = NULL;
 		return (ENOMEM);
 	}
@@ -498,8 +498,12 @@ idpf_set_softc_ctx(if_ctx_t ctx, struct idpf_vport *vport)
 	    ETHER_CRC_LEN;
 	scctx->isc_min_frame_size = ETHER_MIN_LEN;
 
-	/* Vectors are pooled across vports in idpf_intr_req(), not by iflib. */
-	scctx->isc_msix_bar = -1;
+	/*
+	 * Vectors are pooled across vports in idpf_intr_req(), not by iflib,
+	 * and IFLIB_SKIP_MSIX stops iflib reading this at all.  Left at 0
+	 * rather than -1 so it can never be turned into PCIR_BAR(-1).
+	 */
+	scctx->isc_msix_bar = 0;
 	scctx->isc_intr = IFLIB_INTR_MSIX;
 
 	scctx->isc_rss_table_size =
@@ -571,7 +575,9 @@ idpf_if_attach_pre(if_ctx_t ctx)
 	/*
 	 * The MSI-X table lives in its own BAR, which pci_alloc_msix() requires
 	 * to be mapped before it will hand out vectors.  The BAR index comes
-	 * from the capability rather than being assumed.
+	 * from the capability rather than being assumed.  A table in BAR0 needs
+	 * no second mapping, so static_reg_info[1] stays NULL in that case and
+	 * the table is reached through static_reg_info[0].
 	 */
 	if (pci_find_cap(dev, PCIY_MSIX, &msix_cap) == 0) {
 		u32 table;
@@ -597,6 +603,7 @@ idpf_if_attach_pre(if_ctx_t ctx)
 		err = ENOMEM;
 		goto err_bar;
 	}
+	/* Completion state first: idpf_vc_xn_init() marks the manager active. */
 	idpf_init_vc_xn_completion(adapter->vcxn_mngr);
 	idpf_vc_xn_init(adapter->vcxn_mngr);
 
@@ -696,7 +703,8 @@ err_bar:
 		    adapter->dev_ops.static_reg_info[1]);
 		adapter->dev_ops.static_reg_info[1] = NULL;
 	}
-	bus_release_resource(dev, SYS_RES_MEMORY, PCIR_BAR(0),
+	bus_release_resource(dev, SYS_RES_MEMORY,
+	    rman_get_rid(adapter->dev_ops.static_reg_info[0]),
 	    adapter->dev_ops.static_reg_info[0]);
 	adapter->dev_ops.static_reg_info[0] = NULL;
 err_locks:
@@ -843,6 +851,15 @@ idpf_if_detach(if_ctx_t ctx)
 		adapter->vcxn_mngr = NULL;
 	}
 
+	/*
+	 * Safety net against a re-arm between the drain at the top of detach
+	 * and here.  It has to precede the BAR release: these callouts reach
+	 * hardware through hw->mbx.vaddr, which the release unmaps.
+	 */
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+
 	if (adapter->dev_ops.static_reg_info[1] != NULL) {
 		bus_release_resource(dev, SYS_RES_MEMORY,
 		    rman_get_rid(adapter->dev_ops.static_reg_info[1]),
@@ -850,10 +867,14 @@ idpf_if_detach(if_ctx_t ctx)
 		adapter->dev_ops.static_reg_info[1] = NULL;
 	}
 	if (adapter->dev_ops.static_reg_info[0] != NULL) {
-		bus_release_resource(dev, SYS_RES_MEMORY, PCIR_BAR(0),
+		bus_release_resource(dev, SYS_RES_MEMORY,
+		    rman_get_rid(adapter->dev_ops.static_reg_info[0]),
 		    adapter->dev_ops.static_reg_info[0]);
 		adapter->dev_ops.static_reg_info[0] = NULL;
 	}
+
+	/* Idempotent, and skipped when idpf_vc_core_deinit() returned early. */
+	idpf_ptp_release(adapter);
 
 	mtx_destroy(&adapter->adi_info.priv_lock);
 	cv_destroy(&adapter->corer_done_cv);
@@ -862,15 +883,6 @@ idpf_if_detach(if_ctx_t ctx)
 	sx_destroy(&adapter->vector_lock);
 	sx_destroy(&adapter->vport_ctrl_lock);
 	mtx_destroy(&np->stats_lock);
-
-	/*
-	 * Drained again, after everything that could have re-armed them: a
-	 * callout still scheduled here fires into module text that unload has
-	 * already freed.
-	 */
-	callout_drain(&adapter->serv_task);
-	callout_drain(&adapter->stats_task);
-	callout_drain(&adapter->mbx_poll_task);
 
 	free(adapter, M_IDPF);
 	np->adapter = NULL;
@@ -896,6 +908,8 @@ idpf_if_shutdown(if_ctx_t ctx)
 	adapter->flags |= (1u << IDPF_REMOVE_IN_PROG);
 
 	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
 	taskqueue_drain_timeout(adapter->vc_event_wq, &adapter->vc_event_task);
 
 	if (adapter->vcxn_mngr != NULL)
@@ -966,8 +980,9 @@ idpf_if_resume(if_ctx_t ctx)
 		return (0);
 
 	adapter->flags |= (1u << IDPF_PCI_CB_RESET);
-	taskqueue_enqueue_timeout(adapter->vc_event_wq, &adapter->vc_event_task,
-	    idpf_msecs_to_ticks(300));
+	if (adapter->vc_event_wq != NULL)
+		taskqueue_enqueue_timeout(adapter->vc_event_wq,
+		    &adapter->vc_event_task, idpf_msecs_to_ticks(300));
 
 	return (0);
 }
@@ -1008,12 +1023,15 @@ idpf_reset_recover(struct idpf_adapter *adapter)
 	 * reach a half-built one.  Bounded: this runs in the attach thread, so
 	 * waiting forever would take the machine with it.
 	 */
+	/* Cleared by idpf_init_task() on another thread. */
 	for (waited = 0; waited < IDPF_RESET_SETTLE_MS; waited += 100) {
-		if ((adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) == 0)
+		if ((atomic_load_int(&adapter->flags) &
+		    (1u << IDPF_HR_RESET_IN_PROG)) == 0)
 			break;
 		pause("idpfrec", idpf_msecs_to_ticks(100));
 	}
-	if ((adapter->flags & (1u << IDPF_HR_RESET_IN_PROG)) != 0) {
+	if ((atomic_load_int(&adapter->flags) &
+	    (1u << IDPF_HR_RESET_IN_PROG)) != 0) {
 		device_printf(dev,
 		    "vports did not settle within %d ms (flags 0x%x state %d)\n",
 		    IDPF_RESET_SETTLE_MS, adapter->flags, adapter->state);
@@ -1052,6 +1070,10 @@ idpf_is_reset_detected(struct idpf_adapter *adapter)
 
 	reg = &adapter->hw.arq->reg;
 	arqlen = idpf_reg_rd32(idpf_get_mbx_reg_addr(adapter, reg->len));
+
+	/* All-ones is the MMIO-loss sentinel, not a valid register value. */
+	if (arqlen == 0xFFFFFFFFu)
+		return (true);
 
 	/* In reset when either the length or the enable bits are cleared. */
 	return ((arqlen & reg->len_mask) == 0 ||
