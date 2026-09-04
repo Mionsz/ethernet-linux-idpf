@@ -873,7 +873,10 @@ idpf_if_detach(if_ctx_t ctx)
 		adapter->dev_ops.static_reg_info[0] = NULL;
 	}
 
-	/* Idempotent, and skipped when idpf_vc_core_deinit() returned early. */
+	/*
+	 * Unconditional and idempotent: idpf_vc_core_deinit() does this too,
+	 * but returns early when IDPF_VC_CORE_INIT was never set.
+	 */
 	idpf_ptp_release(adapter);
 
 	mtx_destroy(&adapter->adi_info.priv_lock);
