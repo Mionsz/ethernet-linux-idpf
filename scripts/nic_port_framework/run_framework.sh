@@ -41,6 +41,7 @@ STAGES=""
 OSAL_MODE=""
 LOCK_TIMEOUT=""
 LOCK_ON_TIMEOUT=""
+RERUN_COMPLETE=0
 LOG_DIR="${FRAMEWORK_OUT_DIR}/.logs"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 
@@ -66,6 +67,7 @@ Options:
   --lock-on-timeout ACT  exit|override once the lock wait expires (default: policy, override)
   --device-flow          Authenticate the LLM provider interactively (first run)
   --force                Ignore stage gates when running analysis stages
+  --rerun-complete       Re-render and re-execute stages that are already 100% valid
   --resume               Use 'resume' instead of 'build' for extraction
   --stages LIST          Comma-separated stage list, or 'all'
   -h, --help             Show this help
@@ -98,6 +100,7 @@ while [[ $# -gt 0 ]]; do
     --lock-on-timeout) LOCK_ON_TIMEOUT="$2"; shift 2 ;;
     --device-flow)    DEVICE_FLOW=1; shift ;;
     --force)          FORCE=1; shift ;;
+    --rerun-complete) RERUN_COMPLETE=1; shift ;;
     --resume)         RESUME=1; shift ;;
     --stages)         STAGES="$2"; shift 2 ;;
     -h|--help)        usage; exit 0 ;;
@@ -334,8 +337,22 @@ orch() {
 }
 
 # Render every item of a stage, then execute the ready ones through the provider.
+# A stage that is already fully covered is left alone: re-rendering it would change
+# prompt hashes and stale accepted results, forcing a needless re-execution.
 run_analysis_stage() {
   local stage="$1"
+  if [[ ${RERUN_COMPLETE} -eq 0 ]]; then
+    local cov
+    cov="$(orch status --root "${ANALYSIS_ROOT}" --json 2>/dev/null | python3 -c "
+import json,sys
+try: s=json.load(sys.stdin)['stages']['${stage}']
+except Exception: print('unknown'); raise SystemExit
+print('complete' if s['total'] and s['valid']==s['total'] else 'incomplete')" 2>/dev/null)"
+    if [[ "${cov}" == "complete" ]]; then
+      echo "stage '${stage}' is already 100% valid; skipping (use --rerun-complete to force)"
+      return 0
+    fi
+  fi
   local -a render=(render --root "${ANALYSIS_ROOT}" --stage "${stage}")
   local -a exec=(run --root "${ANALYSIS_ROOT}" --stage "${stage}" --jobs "${JOBS}")
   if [[ ${FORCE} -eq 1 ]]; then

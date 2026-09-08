@@ -2143,6 +2143,51 @@ def add_capability_section(c: "PromptComposer", root: Path, limit: int = 20000) 
     )
 
 
+def header_inventory_context(root: Path, max_headers: int = 40) -> dict[str, Any] | None:
+    """Declarations found by the lexical header scan, including headers no TU compiled."""
+    coverage = load_json(root / "manifest" / "header_coverage.json", {}) or {}
+    if not coverage:
+        return None
+    rows = list(iter_jsonl(root / "kb" / "headers.jsonl"))
+    uncovered = set(coverage.get("not_covered_declaring_types") or [])
+    ranked = sorted(
+        rows,
+        key=lambda r: (r.get("path") not in uncovered,
+                       -(len(r.get("structs") or []) + len(r.get("unions") or []) + len(r.get("enums") or []))),
+    )[:max_headers]
+    return {
+        "totals": coverage.get("totals") or {},
+        "headers_total": coverage.get("headers_total"),
+        "headers_not_covered_by_any_translation_unit": coverage.get("not_covered") or [],
+        "type_declaring_headers_never_compiled": sorted(uncovered),
+        "headers": [
+            {
+                "path": r.get("path"),
+                "include_guard": r.get("include_guard"),
+                "compiled_by_a_translation_unit": r.get("extraction_covered"),
+                "structs": r.get("structs") or [],
+                "unions": r.get("unions") or [],
+                "enums": r.get("enums") or [],
+                "typedefs": r.get("typedefs") or [],
+                "kernel_includes": r.get("kernel_includes") or [],
+                "configuration_symbols": r.get("configuration_symbols") or [],
+            }
+            for r in ranked
+        ],
+    }
+
+
+def add_header_inventory_section(c: "PromptComposer", root: Path, limit: int = 30000) -> None:
+    ctx = header_inventory_context(root)
+    if not ctx:
+        return
+    c.add(
+        "Repository header inventory — lexical scan; headers marked compiled_by_a_translation_unit=false "
+        "were never seen by the compiler pass, so their declarations are absent from kb/",
+        "```json\n" + pretty(ctx, limit) + "\n```",
+    )
+
+
 def target_access_section(root: Path, stage: str, item: WorkItem,
                           items: Sequence[WorkItem] | None = None) -> str:
     """Markdown section granting this work item its assigned target-environment endpoint."""
@@ -2722,6 +2767,7 @@ def render_architecture(root: Path, item: WorkItem, baseline: dict[str, Any], po
         c.add("Ingested specification clause index — use stable IDs in feature_model",
               "```json\n" + bounded_records([{k: x.get(k) for k in ("spec_clause_id","document_id","title","source_version","authority_class")} for x in clauses], 40000) + "\n```")
     c.add("Orchestration contract", contract_text("architecture", "architecture", baseline["fingerprint"], project_name(root)))
+    add_header_inventory_section(c, root)
     add_capability_section(c, root)
     return c.render()
 
@@ -2793,6 +2839,7 @@ def render_target(root: Path, item: WorkItem, baseline: dict[str, Any], policy: 
     c.add("Request record template", "```json\n" + template_path(TEMPLATES, "record.method_port_request").read_text(encoding="utf-8").strip() + "\n```")
     c.add("Risk record template", "```json\n" + template_path(TEMPLATES, "record.method_risk").read_text(encoding="utf-8").strip() + "\n```")
     c.add("Orchestration contract", contract_text("target", item.identity or item.item_id, baseline["fingerprint"], project_name(root)))
+    add_header_inventory_section(c, root)
     add_capability_section(c, root)
     return c.render()
 
