@@ -1,0 +1,20 @@
+{
+  "schema_version": "3.1",
+  "catalog_id": "idpf-project-api-extension",
+  "entries": {
+    "netif_set_real_num_rx_queues": {
+      "semantic_category": "netstack",
+      "source_group": "idpf_project_extension",
+      "symbol_kind": "function_or_symbol",
+      "portability_relevance": "linux_kernel_api",
+      "technical_annotation": "Example project extension: queue-count integration is source-network-stack behavior and must be mapped to target-native queue/interface semantics."
+    },
+    "netif_set_real_num_tx_queues": {
+      "semantic_category": "netstack",
+      "source_group": "idpf_project_extension",
+      "symbol_kind": "function_or_symbol",
+      "portability_relevance": "linux_kernel_api",
+      "technical_annotation": "Example project extension: queue-count integration is source-network-stack behavior and must be mapped to target-native queue/interface semantics."
+    }
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "$id": "nic-port://manifest/output/v3.3",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "directories": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "generated_utc": {
+      "type": "string"
+    },
+    "history": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "input_manifest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "know_how": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "manifest_type": {
+      "const": "nic-port-output"
+    },
+    "manifest_version": {
+      "pattern": "^3\\.",
+      "type": "string"
+    },
+    "next_steps": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "output_root": {
+      "type": "string"
+    },
+    "phase": {
+      "type": "string"
+    },
+    "project": {
+      "type": "object"
+    },
+    "significant_files": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "status": {
+      "type": "object"
+    },
+    "vision": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_type",
+    "manifest_version",
+    "output_root",
+    "directories",
+    "significant_files",
+    "know_how",
+    "next_steps"
+  ],
+  "title": "NIC Port Framework V3.3 output manifest",
+  "type": "object"
+}

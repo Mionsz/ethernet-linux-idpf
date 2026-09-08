@@ -1,0 +1,99 @@
+{
+  "cache": {
+    "cache_failed_translation_units": false,
+    "compression": "gzip",
+    "dependency_fingerprint_mode": "stat",
+    "dependency_scope": "compile_dependency_file",
+    "directory": "cache/translation_units",
+    "enabled": true,
+    "invalidate_on_extractor_change": true,
+    "invalidate_on_semantic_runtime_change": true,
+    "reuse_successful_translation_units": true
+  },
+  "checkpoint": {
+    "atomic_updates": true,
+    "enabled": true,
+    "file": "manifest/extraction_checkpoint.json",
+    "record_after_each_translation_unit": true
+  },
+  "diagnostics": {
+    "record_memory_telemetry": true,
+    "stderr_tail_chars": 65536,
+    "stdout_tail_chars": 8192,
+    "write_per_tu_files": true
+  },
+  "fallback": {
+    "backend": "ast-json",
+    "eligible_failure_classes": [
+      "extractor_contract_error",
+      "empty_semantic_output"
+    ],
+    "enabled": true,
+    "ineligible_failure_classes": [
+      "frontend_error",
+      "process_signal",
+      "timeout",
+      "out_of_memory_suspected",
+      "resource_guard",
+      "artifact_budget_exceeded"
+    ],
+    "jobs": 1,
+    "max_attempted_translation_units": 4,
+    "stdout_storage": "temporary_file"
+  },
+  "libtooling": {
+    "per_tu_timeout_seconds": 600,
+    "pp_event_kinds": [
+      "macro_defined",
+      "macro_undefined",
+      "macro_expands",
+      "defined_operator",
+      "if",
+      "ifdef",
+      "ifndef",
+      "elif",
+      "else",
+      "endif",
+      "source_range_skipped"
+    ],
+    "pp_scope": "project",
+    "raw_shard_retention": "failed",
+    "write_merged_raw": false,
+    "write_raw_index": true
+  },
+  "quality_gate": {
+    "allow_recovered_translation_units": true,
+    "block_orchestration_on_failure": true,
+    "maximum_failed_translation_units": 0,
+    "maximum_unclassified_failures": 0,
+    "minimum_translation_unit_success_ratio": 1.0,
+    "require_all_translation_units_accounted": true,
+    "require_authoritative_compile_database": true,
+    "require_cache_identity_match": true,
+    "require_deterministic_merge": true,
+    "require_nonempty_function_set_for_source_translation_units": true,
+    "require_nonempty_local_function_set_for_source_translation_units": true
+  },
+  "resource_guard": {
+    "action_on_low_memory": "fail_translation_unit",
+    "max_retained_raw_bytes": 1073741824,
+    "max_single_raw_shard_bytes": 268435456,
+    "minimum_mem_available_mb_before_tu": 512,
+    "raw_budget_action": "drop_successful_first",
+    "warn_parent_rss_mb": 2048
+  },
+  "schema_version": "3.3",
+  "workspace": {
+    "artifact_budget_report_file": "manifest/artifact_budget.json",
+    "cache_dir": "cache/translation_units",
+    "checkpoint_file": "manifest/extraction_checkpoint.json",
+    "diagnostics_dir": "raw_extractor/diagnostics",
+    "libtooling_shard_dir": "raw_extractor/libtooling_shards",
+    "merged_raw_file": "raw_extractor/libtooling.json",
+    "preflight_report_file": "manifest/preflight.json",
+    "quality_report_file": "manifest/extraction_quality.json",
+    "raw_index_file": "raw_extractor/index.json",
+    "run_state_file": "manifest/run_state.json",
+    "translation_unit_diagnostics_file": "manifest/translation_unit_diagnostics.jsonl"
+  }
+}

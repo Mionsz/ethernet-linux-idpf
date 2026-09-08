@@ -1,0 +1,63 @@
+{
+  "$id": "nic-port://result/evidence/3.1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "confidence": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "type": "string"
+    },
+    "evidence_id": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "mapping_analysis": {
+      "type": "object"
+    },
+    "open_questions": {
+      "type": "array"
+    },
+    "question": {
+      "type": "string"
+    },
+    "semantic_category": {
+      "type": "string"
+    },
+    "source_semantics": {
+      "type": "object"
+    },
+    "sources": {
+      "type": "array"
+    },
+    "status": {
+      "type": "string"
+    },
+    "target_semantics": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "evidence_id",
+    "kind",
+    "question",
+    "semantic_category",
+    "source_semantics",
+    "target_semantics",
+    "mapping_analysis",
+    "sources",
+    "status",
+    "confidence",
+    "open_questions"
+  ],
+  "title": "NIC Port evidence result",
+  "type": "object"
+}

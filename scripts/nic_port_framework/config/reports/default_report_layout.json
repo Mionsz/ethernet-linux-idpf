@@ -1,0 +1,109 @@
+{
+  "api_catalog_gap_columns": [
+    "symbol",
+    "semantic_category",
+    "occurrences",
+    "functions",
+    "files",
+    "detection_sources",
+    "suggested_action"
+  ],
+  "api_usage_columns": [
+    "symbol",
+    "semantic_category",
+    "source_group",
+    "functions",
+    "occurrences",
+    "detection_sources"
+  ],
+  "count_table": {
+    "empty_text": "No entries.",
+    "headers": [
+      "Item",
+      "Count"
+    ]
+  },
+  "function_api_hits_columns": [
+    "stable_id",
+    "function_key",
+    "file",
+    "function",
+    "symbol",
+    "semantic_category",
+    "source_group",
+    "symbol_kind",
+    "detection_source",
+    "line",
+    "risk_weight",
+    "technical_annotation"
+  ],
+  "function_inventory_columns": [
+    "stable_id",
+    "function_key",
+    "name",
+    "file",
+    "line_start",
+    "line_end",
+    "line_count",
+    "subsystems",
+    "portability_class",
+    "risk_score",
+    "risk_band",
+    "recommendation",
+    "api_hit_count",
+    "api_categories",
+    "linux_specific_features",
+    "callback_reference_count",
+    "indirect_call_count"
+  ],
+  "include_report_columns": [
+    "file",
+    "include",
+    "include_style",
+    "classification"
+  ],
+  "layout_id": "default-portability-reports",
+  "linux_specific_columns": [
+    "stable_id",
+    "function_key",
+    "file",
+    "function",
+    "feature_family",
+    "match_count",
+    "sample_matches"
+  ],
+  "schema_version": "3.1",
+  "summary_template": "report.portability_summary",
+  "top_risk_functions_limit": 20,
+  "top_risk_table": {
+    "columns": [
+      {
+        "field": "name",
+        "format": "code",
+        "label": "Function"
+      },
+      {
+        "field": "file",
+        "format": "code",
+        "label": "File"
+      },
+      {
+        "field": "risk_score",
+        "label": "Score"
+      },
+      {
+        "field": "risk_band",
+        "label": "Band"
+      },
+      {
+        "field": "portability_class",
+        "label": "Class"
+      },
+      {
+        "field": "recommendation",
+        "label": "Recommendation"
+      }
+    ],
+    "empty_text": "No functions."
+  }
+}

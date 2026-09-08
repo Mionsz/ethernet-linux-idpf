@@ -1,0 +1,32 @@
+{
+  "configuration": {
+    "semantic_rules": {
+      "$append": [
+        "idpf_semantic_rules.extension.json"
+      ]
+    }
+  },
+  "includes": [
+    "../config/default.manifest.json"
+  ],
+  "inputs": {
+    "compile_commands": "${FRAMEWORK_OUT_DIR}/compile_commands.json",
+    "kernel_build_dir": "${KERNEL_BUILD_DIR}",
+    "source_root": "${FRAMEWORK_REPO_SRC_DIR}",
+    "specification_manifests": []
+  },
+  "manifest_version": "3.3",
+  "output": {
+    "root": "${FRAMEWORK_OUT_DIR}/idpf-baseline"
+  },
+  "project": {
+    "name": "idpf",
+    "source_os": "Linux",
+    "target_os": "FreeBSD",
+    "variant": "baseline"
+  },
+  "tools": {
+    "clang": "clang-22",
+    "libtooling_extractor": "${FRAMEWORK_OUT_DIR}/nic-port-clang-extractor"
+  }
+}

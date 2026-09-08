@@ -1,0 +1,95 @@
+{
+  "$id": "nic-port://result/files/3.1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "confidence": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "type": "string"
+    },
+    "documentation_search": {
+      "type": "array"
+    },
+    "feature_ids": {
+      "type": "array"
+    },
+    "file": {
+      "type": "string"
+    },
+    "function_disposition": {
+      "type": "array"
+    },
+    "hardware_protocol_effects": {
+      "type": "array"
+    },
+    "portability_class": {
+      "enum": [
+        "P0",
+        "P1",
+        "P2",
+        "P3",
+        "P4",
+        "P5"
+      ],
+      "type": "string"
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "request_decisions": {
+      "type": "array"
+    },
+    "risk_decisions": {
+      "type": "array"
+    },
+    "risks": {
+      "type": "array"
+    },
+    "source_os_services": {
+      "type": "array"
+    },
+    "state_and_resources": {
+      "type": "array"
+    },
+    "subsystems": {
+      "type": "array"
+    },
+    "synchronization_invariants": {
+      "type": "array"
+    },
+    "target_design": {
+      "type": "array"
+    },
+    "tests": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "file",
+    "purpose",
+    "subsystems",
+    "feature_ids",
+    "function_disposition",
+    "state_and_resources",
+    "synchronization_invariants",
+    "hardware_protocol_effects",
+    "source_os_services",
+    "target_design",
+    "risks",
+    "documentation_search",
+    "tests",
+    "portability_class",
+    "confidence",
+    "request_decisions",
+    "risk_decisions"
+  ],
+  "title": "NIC Port files result",
+  "type": "object"
+}

@@ -1,0 +1,5 @@
+{
+  "risk_id": "RSK-...", "decision": "MITIGATE_IN_FILE|ACCEPT|ESCALATE_PROJECT|DEFER|REJECT_INVALID|DUPLICATE|NEEDS_EVIDENCE|TRANSFER",
+  "rationale": "", "mitigation_refs": [], "test_ids": [], "residual_likelihood": "L1|L2|L3|L4|L5", "residual_impact": "I1|I2|I3|I4|I5",
+  "duplicate_of": null, "defer_until": null
+}

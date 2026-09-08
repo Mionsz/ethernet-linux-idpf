@@ -1,0 +1,32 @@
+{
+  "schema_version": "3.0",
+  "templates": {
+    "builder.analysis_dropzone": "../../../templates/builder/analysis_dropzone.md",
+    "builder.architecture": "../../../templates/builder/architecture_review.md",
+    "builder.file": "../../../templates/builder/file_review.md",
+    "builder.final": "../../../templates/builder/final_design.md",
+    "builder.method": "../../../templates/builder/method_review.md",
+    "builder.subsystem": "../../../templates/builder/subsystem_review.md",
+    "builder.target_work_item": "../../../templates/builder/target_work_item.md",
+    "orchestrator.contract.architecture": "../../../templates/orchestrator/contracts/architecture.md",
+    "orchestrator.contract.evidence": "../../../templates/orchestrator/contracts/evidence.md",
+    "orchestrator.contract.files": "../../../templates/orchestrator/contracts/files.md",
+    "orchestrator.contract.final": "../../../templates/orchestrator/contracts/final.md",
+    "orchestrator.contract.methods": "../../../templates/orchestrator/contracts/methods.md",
+    "orchestrator.contract.subsystems": "../../../templates/orchestrator/contracts/subsystems.md",
+    "orchestrator.contract.target": "../../../templates/orchestrator/contracts/target.md",
+    "orchestrator.evidence_task": "../../../templates/orchestrator/misc/evidence_task.md",
+    "orchestrator.process": "../../../templates/orchestrator/process/PROCESS.md",
+    "orchestrator.repair": "../../../templates/orchestrator/misc/repair_prompt.md",
+    "orchestrator.variant_merge": "../../../templates/orchestrator/misc/variant_merge_review.md",
+    "record.file_request_decision": "../../../templates/orchestrator/records/file_request_decision.json",
+    "record.file_risk_decision": "../../../templates/orchestrator/records/file_risk_decision.json",
+    "record.method_port_request": "../../../templates/orchestrator/records/method_port_request.json",
+    "record.method_risk": "../../../templates/orchestrator/records/method_risk.json",
+    "record.project_request_decision": "../../../templates/orchestrator/records/project_request_decision.json",
+    "record.project_risk_decision": "../../../templates/orchestrator/records/project_risk_decision.json",
+    "record.spec_manifest_example": "../../../templates/orchestrator/records/spec_manifest.example.json",
+    "record.test_record": "../../../templates/orchestrator/records/test_record.json",
+    "report.portability_summary": "../../../templates/reports/portability_summary.md"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "test_id": "TEST-... (optional; deterministic ID assigned when omitted)", "title": "", "objective": "",
+  "test_type": "unit|integration|differential|fault|stress|performance|conformance|other", "level": "method|file|subsystem|project",
+  "feature_ids": [], "spec_clause_ids": [], "preconditions": [], "procedure": [], "expected_result": "", "automation": "manual|partial|automated|TBD"
+}
