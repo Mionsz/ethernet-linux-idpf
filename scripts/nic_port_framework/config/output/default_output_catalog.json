@@ -1,0 +1,423 @@
+{
+  "auto_index_description": "Generated artifact directory (auto-indexed).",
+  "builder": {
+    "directories": [
+      {
+        "description": "Baseline, compile-unit and resolved configuration metadata.",
+        "path": "manifest",
+        "role": "manifest"
+      },
+      {
+        "description": "Compiler/source-derived machine-readable driver knowledge base.",
+        "path": "kb",
+        "role": "knowledge_base"
+      },
+      {
+        "description": "Derived human-auditable API/include/function portability indexes.",
+        "path": "indexes",
+        "role": "indexes"
+      },
+      {
+        "description": "Derived CSV/Markdown portability review reports.",
+        "path": "reports",
+        "role": "reports"
+      },
+      {
+        "description": "Per-method/file/subsystem context packages.",
+        "path": "contexts",
+        "role": "contexts"
+      },
+      {
+        "description": "Template-rendered immutable base analysis prompts.",
+        "path": "prompts",
+        "role": "base_prompts"
+      },
+      {
+        "description": "Locations for reviewed analysis results.",
+        "path": "analysis",
+        "role": "analysis_dropzones"
+      },
+      {
+        "description": "Call/dependency graphs derived from extracted facts.",
+        "path": "graphs",
+        "role": "graphs"
+      },
+      {
+        "description": "Reusable semantic TU cache; entries are fingerprinted and may be reused by resume.",
+        "path": "cache",
+        "role": "translation_unit_cache"
+      },
+      {
+        "description": "Retained failed raw shards, diagnostics and extractor indexes; successful shards are normally discarded.",
+        "path": "raw_extractor",
+        "role": "raw_extractor"
+      }
+    ],
+    "know_how": [
+      "Treat kb/ and manifest/ as deterministic extraction evidence; do not edit them manually.",
+      "Treat indexes/ and reports/ as derived review surfaces. They can be regenerated from the canonical KB and manifest configuration.",
+      "Exact API catalog hits are high-confidence classification hints, regex family hits are coverage hints, and compiler/AST facts remain authoritative for calls and locations.",
+      "Base prompts are rendered from external templates referenced by the input manifest; change templates/configuration and rerun rather than editing generated prompts.",
+      "Use the same input manifest for the orchestrator so policy, templates and semantic categories remain consistent.",
+      "Start downstream analysis with architecture; method/file/subsystem/final gates are enforced by the orchestrator.",
+      "Successful translation units are cached by semantic input fingerprint; use resume after a failed run to reuse matching TU results without rerunning bootstrap.",
+      "manifest/extraction_quality.json and manifest/run_state.json are the validity gate; physical downstream files from an older run are not current unless the active run is COMPLETE/PASS.",
+      "manifest/extraction_checkpoint.json is operational provenance, not semantic source truth; it records progress/cache reuse and can change without staling accepted engineering analysis."
+    ],
+    "next_steps": [
+      {
+        "action": "diagnose_extraction",
+        "command": "python3 nic_port_pipeline.py --manifest {{INPUT_MANIFEST}} diagnose-extraction",
+        "order": 1,
+        "why": "Inspect TU failures, cache/checkpoint state, resource signals and extraction quality before downstream analysis."
+      },
+      {
+        "action": "resume_failed_extraction",
+        "command": "python3 nic_port_pipeline.py --manifest {{INPUT_MANIFEST}} resume",
+        "order": 2,
+        "why": "Retry only invalid/missing TUs without bootstrap; reuse successful semantic TU cache entries when identities still match."
+      },
+      {
+        "action": "initialize_orchestrator",
+        "command": "python3 nic_port_orchestrator.py --manifest {{INPUT_MANIFEST}} init",
+        "order": 3,
+        "why": "Create schema-validated orchestration inventory, registries, traceability and stage gates."
+      },
+      {
+        "action": "review_output_manifest",
+        "order": 4,
+        "path": "{{OUTPUT_MANIFEST}}",
+        "why": "Use this file as the single exitpoint for all produced artifacts."
+      }
+    ],
+    "significant_files": [
+      {
+        "description": "Machine summary of this extraction run.",
+        "path": "run_result.json",
+        "required": true,
+        "role": "run_result"
+      },
+      {
+        "description": "Frozen project/build/source baseline.",
+        "path": "manifest/project.json",
+        "required": true,
+        "role": "project_baseline"
+      },
+      {
+        "description": "Fully merged and environment-resolved input manifest used by the run.",
+        "path": "manifest/resolved_input_manifest.json",
+        "required": true,
+        "role": "resolved_input_manifest"
+      },
+      {
+        "description": "References to all configuration, catalog, policy and template files used by the run.",
+        "path": "manifest/configuration_sources.json",
+        "required": true,
+        "role": "configuration_sources"
+      },
+      {
+        "description": "Hashes/fingerprints of configuration and templates for reproducibility.",
+        "path": "manifest/configuration_lock.json",
+        "required": true,
+        "role": "configuration_lock"
+      },
+      {
+        "description": "Extraction counts and semantic-category distribution.",
+        "path": "manifest/summary.json",
+        "required": true,
+        "role": "summary"
+      },
+      {
+        "description": "Per-translation-unit extraction diagnostics.",
+        "path": "manifest/extraction_errors.json",
+        "required": true,
+        "role": "extraction_errors"
+      },
+      {
+        "description": "Canonical extracted function records.",
+        "path": "kb/functions.jsonl",
+        "required": true,
+        "role": "functions"
+      },
+      {
+        "description": "Initial documentation/evidence research queue.",
+        "path": "kb/doc_search_queue.jsonl",
+        "required": true,
+        "role": "doc_search_queue"
+      },
+      {
+        "description": "One row per function with portability/risk/recommendation summary.",
+        "path": "indexes/function_inventory.csv",
+        "required": true,
+        "role": "function_inventory"
+      },
+      {
+        "description": "One row per function/API hit with detection provenance and risk metadata.",
+        "path": "indexes/function_api_hits.csv",
+        "required": true,
+        "role": "function_api_hits"
+      },
+      {
+        "description": "Include usage classified by portability/source family.",
+        "path": "indexes/include_report.csv",
+        "required": true,
+        "role": "include_report"
+      },
+      {
+        "description": "Per-function Linux-specific feature-family detections.",
+        "path": "indexes/linux_specific_functionality.csv",
+        "required": true,
+        "role": "linux_specific_features"
+      },
+      {
+        "description": "Aggregated Linux API usage across functions.",
+        "path": "indexes/linux_api_usage.csv",
+        "required": true,
+        "role": "api_usage_report"
+      },
+      {
+        "description": "Symbols detected by compiler/regex classification but absent from the exact API catalogue; reviewed candidates for future catalogue extensions.",
+        "path": "indexes/api_catalog_gaps.csv",
+        "required": true,
+        "role": "api_catalog_gaps"
+      },
+      {
+        "description": "Template-rendered high-level derived portability summary.",
+        "path": "reports/portability_summary.md",
+        "required": true,
+        "role": "portability_summary"
+      },
+      {
+        "description": "Base architecture review prompt.",
+        "path": "prompts/00_architecture_review.md",
+        "required": true,
+        "role": "architecture_prompt"
+      },
+      {
+        "description": "Base final synthesis prompt; not ready until upstream stages complete.",
+        "path": "prompts/99_final_port_design.md",
+        "required": true,
+        "role": "final_design_prompt"
+      },
+      {
+        "description": "Merged exact API catalogue used for classification.",
+        "path": "manifest/resolved_configuration/api_catalog.json",
+        "required": true,
+        "role": "resolved_api_catalog"
+      },
+      {
+        "description": "Resolved function portability/risk scoring model.",
+        "path": "manifest/resolved_configuration/portability_scoring.json",
+        "required": true,
+        "role": "resolved_portability_scoring"
+      },
+      {
+        "description": "Resolved stages, result schemas and framework enumerations.",
+        "path": "manifest/resolved_configuration/framework_model.json",
+        "required": true,
+        "role": "resolved_framework_model"
+      },
+      {
+        "description": "Resolved Linux API patterns, FreeBSD target hints, subsystem patterns, risk weights and source-scan rules.",
+        "path": "manifest/semantic_rules.resolved.json",
+        "required": true,
+        "role": "resolved_semantic_rules"
+      },
+      {
+        "description": "Resolved Linux-specific source feature-family patterns.",
+        "path": "manifest/resolved_configuration/linux_specific_rules.json",
+        "required": true,
+        "role": "resolved_linux_specific_rules"
+      },
+      {
+        "description": "Resolved include/header classification rules.",
+        "path": "manifest/resolved_configuration/include_classification.json",
+        "required": true,
+        "role": "resolved_include_classification"
+      },
+      {
+        "description": "Resolved Kbuild/GCC-to-Clang analysis normalization policy.",
+        "path": "manifest/resolved_configuration/tooling_normalization.json",
+        "required": true,
+        "role": "resolved_tooling_normalization"
+      },
+      {
+        "description": "Resolved derived-report columns/layout configuration.",
+        "path": "manifest/resolved_configuration/report_layout.json",
+        "required": true,
+        "role": "resolved_report_layout"
+      },
+      {
+        "description": "Resolved prompt/context excerpt and size limits.",
+        "path": "manifest/resolved_configuration/context_layout.json",
+        "required": true,
+        "role": "resolved_context_layout"
+      },
+      {
+        "description": "Resolved output-manifest directory/significant-file/navigation catalogue.",
+        "path": "manifest/resolved_configuration/output_catalog.json",
+        "required": true,
+        "role": "resolved_output_catalog"
+      },
+      {
+        "description": "Transactional state of the current builder run; downstream analysis is valid only when COMPLETE.",
+        "path": "manifest/run_state.json",
+        "required": true,
+        "role": "run_state"
+      },
+      {
+        "description": "Extraction-quality gate with TU coverage, failures, recoveries and cache/fresh counts.",
+        "path": "manifest/extraction_quality.json",
+        "required": true,
+        "role": "extraction_quality"
+      },
+      {
+        "description": "Per-translation-unit final diagnostics including backend, failure class and cache provenance.",
+        "path": "manifest/translation_unit_diagnostics.jsonl",
+        "required": true,
+        "role": "translation_unit_diagnostics"
+      },
+      {
+        "description": "Incremental checkpoint updated after each TU to make interrupted runs auditable/resumable.",
+        "path": "manifest/extraction_checkpoint.json",
+        "required": false,
+        "role": "extraction_checkpoint"
+      },
+      {
+        "description": "Environment/tool/build/cache preflight snapshot captured before semantic extraction.",
+        "path": "manifest/preflight.json",
+        "required": true,
+        "role": "extraction_preflight"
+      },
+      {
+        "description": "Raw/cache artifact size budget and cache-use report.",
+        "path": "manifest/artifact_budget.json",
+        "required": false,
+        "role": "artifact_budget"
+      },
+      {
+        "description": "Per-TU raw/diagnostic/cache index for extraction troubleshooting.",
+        "path": "raw_extractor/index.json",
+        "required": false,
+        "role": "raw_extractor_index"
+      }
+    ]
+  },
+  "orchestrator": {
+    "directories": [
+      {
+        "description": "Schema-validated analysis control plane and provenance.",
+        "path": "orchestration",
+        "role": "orchestration"
+      },
+      {
+        "description": "Enriched stage prompts generated from validated upstream results.",
+        "path": "orchestration/prompts",
+        "role": "orchestration_prompts"
+      },
+      {
+        "description": "Normalized accepted analysis results.",
+        "path": "orchestration/results",
+        "role": "orchestration_results"
+      },
+      {
+        "description": "Script-owned port request and risk registries.",
+        "path": "orchestration/registries",
+        "role": "registries"
+      },
+      {
+        "description": "Feature/spec/source/target/test/request/risk traceability database.",
+        "path": "orchestration/traceability",
+        "role": "traceability"
+      },
+      {
+        "description": "Evidence inventory and verification artifacts.",
+        "path": "orchestration/evidence",
+        "role": "evidence"
+      },
+      {
+        "description": "Ingested specification documents/clauses and stable IDs.",
+        "path": "orchestration/specifications",
+        "role": "specifications"
+      }
+    ],
+    "know_how": [
+      "Start with output_manifest.json; it indexes rather than embeds project artifacts.",
+      "Generated base knowledge remains immutable; orchestrated results are provenance-checked derivatives.",
+      "All prompts and record templates come from the template index referenced by the input manifest.",
+      "All stage policy comes from the orchestration policy files referenced by the same input manifest.",
+      "Method agents may propose requests/risks; file agents must explicitly disposition owned items; project items remain open until final resolution.",
+      "A result that becomes stale after upstream change must be re-rendered/re-ingested rather than manually patched in place."
+    ],
+    "next_steps": [
+      {
+        "action": "advance_stage",
+        "command": "python3 nic_port_orchestrator.py --manifest {{INPUT_MANIFEST}} render --stage {{STAGE}}",
+        "why": "Advance the next incomplete stage whose configured gate is ready."
+      },
+      {
+        "action": "inspect_status",
+        "command": "python3 nic_port_orchestrator.py --manifest {{INPUT_MANIFEST}} status --verbose",
+        "why": "Review gate blockers, coverage, evidence and staleness before running additional agents."
+      }
+    ],
+    "significant_files": [
+      {
+        "description": "Resolved orchestration policy derived from the input manifest.",
+        "path": "orchestration/policy.json",
+        "required": true,
+        "role": "orchestration_policy"
+      },
+      {
+        "description": "Fingerprint used for staleness/provenance validation.",
+        "path": "orchestration/baseline.json",
+        "required": true,
+        "role": "orchestration_baseline"
+      },
+      {
+        "description": "Stage work-item inventory.",
+        "path": "orchestration/inventory.json",
+        "required": true,
+        "role": "orchestration_inventory"
+      },
+      {
+        "description": "Current stage coverage and gate report.",
+        "path": "orchestration/reports/status.json",
+        "required": true,
+        "role": "orchestration_status"
+      },
+      {
+        "description": "Comparison of current configuration against the extraction lock.",
+        "path": "orchestration/reports/configuration_drift.json",
+        "required": true,
+        "role": "configuration_drift"
+      },
+      {
+        "description": "Request/risk lifecycle and unresolved project-level decisions.",
+        "path": "orchestration/registries/resolution.json",
+        "required": false,
+        "role": "registry_resolution"
+      },
+      {
+        "description": "Feature-level coverage and test-gap report.",
+        "path": "orchestration/traceability/coverage.json",
+        "required": false,
+        "role": "traceability_coverage"
+      },
+      {
+        "description": "Cross-FAR architecture consistency findings.",
+        "path": "orchestration/reports/consistency.json",
+        "required": false,
+        "role": "consistency_report"
+      },
+      {
+        "description": "Non-regression audit findings when generated.",
+        "path": "orchestration/reports/audit.json",
+        "required": false,
+        "role": "audit_report"
+      }
+    ]
+  },
+  "schema_version": "3.1",
+  "vision": "This manifest is the single exitpoint for the generated driver-port knowledge workspace. It indexes important artifacts and directories without embedding their contents. Consumers should start here, then follow referenced files according to stage/gate guidance."
+}

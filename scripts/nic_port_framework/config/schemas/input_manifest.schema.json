@@ -1,0 +1,368 @@
+{
+  "$id": "nic-port://manifest/input/v3.3",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "bootstrap": {
+      "properties": {
+        "run_on_prepare": {
+          "type": "boolean"
+        },
+        "steps": {
+          "items": {
+            "properties": {
+              "allow_failure": {
+                "type": "boolean"
+              },
+              "argv": {
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "cwd": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "env": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "argv"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "configuration": {
+      "properties": {
+        "api_catalogs": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": false,
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "$append": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$prepend": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$replace": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "context_layout": {
+          "type": "string"
+        },
+        "extraction_runtime": {
+          "type": "string"
+        },
+        "framework_model": {
+          "type": "string"
+        },
+        "include_classification": {
+          "type": "string"
+        },
+        "osal_rules": {
+          "type": "string"
+        },
+        "target_profile": {
+          "type": "string"
+        },
+        "linux_specific_rules": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": false,
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "$append": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$prepend": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$replace": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "orchestration_policy": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": false,
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "$append": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$prepend": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$replace": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "output_catalog": {
+          "type": "string"
+        },
+        "portability_scoring": {
+          "type": "string"
+        },
+        "report_layout": {
+          "type": "string"
+        },
+        "semantic_rules": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": false,
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "$append": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$prepend": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$replace": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "template_index": {
+          "type": "string"
+        },
+        "tooling_normalization": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "extraction": {
+      "type": "object"
+    },
+    "includes": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "inputs": {
+      "properties": {
+        "compile_commands": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kernel_build_dir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "osal_root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "specification_manifests": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": false,
+              "maxProperties": 1,
+              "minProperties": 1,
+              "properties": {
+                "$append": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$prepend": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "$replace": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "manifest_version": {
+      "pattern": "^3\\.",
+      "type": "string"
+    },
+    "output": {
+      "properties": {
+        "root": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "project": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source_os": {
+          "type": "string"
+        },
+        "target_os": {
+          "type": "string"
+        },
+        "variant": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "tools": {
+      "properties": {
+        "clang": {
+          "type": "string"
+        },
+        "libtooling_extractor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "workflow": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "manifest_version"
+  ],
+  "title": "NIC Port Framework V3.3 input manifest",
+  "type": "object"
+}

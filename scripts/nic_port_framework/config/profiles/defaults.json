@@ -1,0 +1,71 @@
+{
+  "bootstrap": {
+    "run_on_prepare": false,
+    "steps": []
+  },
+  "configuration": {
+    "api_catalogs": [
+      "../catalogs/linux_api_registry.json"
+    ],
+    "context_layout": "../rules/context_layout.json",
+    "extraction_runtime": "../rules/extraction_runtime.json",
+    "framework_model": "../framework/default_framework_model.json",
+    "include_classification": "../rules/include_classification.json",
+    "linux_specific_rules": [
+      "../rules/linux_specific_features.json"
+    ],
+    "orchestration_policy": [
+      "../policy/default_policy.json"
+    ],
+    "osal_rules": "../rules/osal_rules.json",
+    "output_catalog": "../output/default_output_catalog.json",
+    "portability_scoring": "../rules/portability_scoring.json",
+    "report_layout": "../reports/default_report_layout.json",
+    "semantic_rules": [
+      "../rules/default_semantic_rules.json"
+    ],
+    "target_profile": "../targets/freebsd_iflib.json",
+    "template_index": "../templates/indexes/default_templates.json",
+    "tooling_normalization": "../rules/tooling_normalization.json"
+  },
+  "extraction": {
+    "allow_source_scan": false,
+    "ast_jobs": 4,
+    "backend": "auto",
+    "clang_extra": [],
+    "include_generated_translation_units": false,
+    "keep_ast": false,
+    "libtooling_jobs": 1,
+    "max_file_source_chars": 70000,
+    "max_method_context_chars": 32000,
+    "strict": true
+  },
+  "inputs": {
+    "compile_commands": null,
+    "kernel_build_dir": null,
+    "osal_root": "../../osal",
+    "source_root": null,
+    "specification_manifests": [
+      "../../templates/orchestrator/records/spec_manifest.example.json"
+    ]
+  },
+  "manifest_version": "3.3",
+  "output": {
+    "root": null
+  },
+  "project": {
+    "name": "driver",
+    "source_os": "Linux",
+    "target_os": "FreeBSD",
+    "variant": "default"
+  },
+  "tools": {
+    "clang": "clang",
+    "libtooling_extractor": null
+  },
+  "workflow": {
+    "ingest_specifications": true,
+    "initialize_orchestrator": true,
+    "refresh_output_manifest": true
+  }
+}

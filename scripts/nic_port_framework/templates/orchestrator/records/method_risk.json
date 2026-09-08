@@ -1,0 +1,5 @@
+{
+  "local_id": "RSK1", "scope_hint": "file_feature|project", "title": "", "condition": "", "consequence": "",
+  "likelihood": "L1|L2|L3|L4|L5", "impact": "I1|I2|I3|I4|I5", "mitigation": "", "detection": "", "trigger": "",
+  "feature_ids": [], "blocking": false, "evidence_refs": []
+}

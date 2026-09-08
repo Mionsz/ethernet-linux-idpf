@@ -1,0 +1,16 @@
+{
+  "schema_version": "3.0",
+  "linux_api_patterns": {
+    "idpf_firmware_protocol": ["^idpf_vc_", "^idpf_send_mb_msg", "^idpf_recv_mb_msg"]
+  },
+  "freebsd_target_hints": {
+    "idpf_firmware_protocol": "Preserve virtchnl/control-plane wire semantics; adapt only host transport, scheduling, DMA and lifecycle integration."
+  },
+  "subsystem_patterns": {
+    "idpf_firmware_protocol": ["virtchnl", "mbx", "mailbox", "vc_"]
+  },
+  "risk_weights": {
+    "idpf_firmware_protocol": 5
+  },
+  "ignore_dirs": ["generated-local"]
+}

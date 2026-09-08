@@ -1,0 +1,4 @@
+{
+  "request_id": "REQ-...", "decision": "IMPLEMENT|ADOPT_ARCHITECTURE|DEFER|REJECT|DUPLICATE|NEEDS_EVIDENCE", "rationale": "",
+  "implementation_refs": [], "test_ids": [], "duplicate_of": null, "defer_until": null
+}

@@ -1,0 +1,1381 @@
+{
+  "catalog_id": "linux-kernel-api-default",
+  "description": "Exact-symbol Linux kernel API catalogue used as a high-confidence supplement to compiler/regex classification. Extend with project-specific catalog files; do not edit generated KB records.",
+  "entries": {
+    "BIT": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "macro"
+    },
+    "BUG": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "macro"
+    },
+    "BUILD_BUG_ON": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "macro"
+    },
+    "DEVICE_ATTR_RW": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "debugfs_sysfs",
+      "symbol_kind": "macro"
+    },
+    "FIELD_GET": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "macro"
+    },
+    "FIELD_PREP": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "macro"
+    },
+    "GENMASK": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "macro"
+    },
+    "INIT_DELAYED_WORK": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "macro"
+    },
+    "INIT_LIST_HEAD": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "macro"
+    },
+    "INIT_WORK": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "macro"
+    },
+    "IRQ_HANDLED": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "interrupt",
+      "symbol_kind": "macro"
+    },
+    "MODULE_DESCRIPTION": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "macro"
+    },
+    "MODULE_DEVICE_TABLE": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "macro"
+    },
+    "MODULE_LICENSE": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "macro"
+    },
+    "MODULE_PARM_DESC": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "macro"
+    },
+    "MODULE_VERSION": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "macro"
+    },
+    "READ_ONCE": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "macro"
+    },
+    "SET_NETDEV_DEV": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "macro"
+    },
+    "THIS_MODULE": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "macro"
+    },
+    "WARN_ON": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "macro"
+    },
+    "WARN_ONCE": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "macro"
+    },
+    "WRITE_ONCE": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "macro"
+    },
+    "__be16": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "__le32": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "__le64": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "alloc_etherdev": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "alloc_etherdev_mqs": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "alloc_page": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "memory",
+      "symbol_kind": "function_or_symbol"
+    },
+    "alloc_workqueue": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "auxiliary_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "auxiliary_bus",
+      "symbol_kind": "type"
+    },
+    "auxiliary_device_add": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "auxiliary_bus",
+      "symbol_kind": "function_or_symbol"
+    },
+    "auxiliary_device_delete": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "auxiliary_bus",
+      "symbol_kind": "function_or_symbol"
+    },
+    "auxiliary_device_init": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "auxiliary_bus",
+      "symbol_kind": "function_or_symbol"
+    },
+    "auxiliary_device_uninit": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "auxiliary_bus",
+      "symbol_kind": "function_or_symbol"
+    },
+    "bpf_prog_put": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "build_skb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "cancel_delayed_work_sync": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "cancel_work_sync": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "clear_bit": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "complete": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "completion_wait",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "consume_skb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "container_of": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "cpu_to_le16": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "function_or_symbol"
+    },
+    "cpu_to_le32": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "function_or_symbol"
+    },
+    "cpu_to_le64": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "function_or_symbol"
+    },
+    "debugfs_create_dir": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "debugfs_sysfs",
+      "symbol_kind": "function_or_symbol"
+    },
+    "debugfs_create_file": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "debugfs_sysfs",
+      "symbol_kind": "function_or_symbol"
+    },
+    "debugfs_remove_recursive": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "debugfs_sysfs",
+      "symbol_kind": "function_or_symbol"
+    },
+    "del_timer": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "del_timer_sync": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "destroy_workqueue": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dev_dbg": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dev_err": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dev_info": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dev_kfree_skb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dev_kfree_skb_any": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dev_warn": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "devlink_alloc": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "devlink",
+      "symbol_kind": "function_or_symbol"
+    },
+    "devlink_free": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "devlink",
+      "symbol_kind": "function_or_symbol"
+    },
+    "devlink_port_register": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "devlink",
+      "symbol_kind": "function_or_symbol"
+    },
+    "devlink_port_unregister": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "devlink",
+      "symbol_kind": "function_or_symbol"
+    },
+    "devlink_register": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "devlink",
+      "symbol_kind": "function_or_symbol"
+    },
+    "devlink_unregister": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "devlink",
+      "symbol_kind": "function_or_symbol"
+    },
+    "disable_irq": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "disable_irq_nosync": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_alloc_coherent": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "dma",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_free_coherent": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "dma",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_map_page": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "dma",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_map_single": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "dma",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_set_coherent_mask": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_set_mask": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_sync_single_for_cpu": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_sync_single_for_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_unmap_page": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "dma",
+      "symbol_kind": "function_or_symbol"
+    },
+    "dma_unmap_single": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "dma",
+      "source_group": "dma",
+      "symbol_kind": "function_or_symbol"
+    },
+    "enable_irq": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "eth_type_trans": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "ethtool_op_get_link": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "ethtool",
+      "symbol_kind": "function_or_symbol"
+    },
+    "ethtool_ops": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "type"
+    },
+    "ethtool_puts": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "ethtool",
+      "symbol_kind": "function_or_symbol"
+    },
+    "ethtool_sprintf": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "ethtool",
+      "symbol_kind": "function_or_symbol"
+    },
+    "flush_work": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "free_irq": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "interrupt",
+      "symbol_kind": "function_or_symbol"
+    },
+    "free_netdev": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "ioremap": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "mmio_bus",
+      "source_group": "io",
+      "symbol_kind": "function_or_symbol"
+    },
+    "iounmap": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "mmio_bus",
+      "source_group": "io",
+      "symbol_kind": "function_or_symbol"
+    },
+    "irq_set_affinity_hint": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "interrupt",
+      "symbol_kind": "function_or_symbol"
+    },
+    "irqreturn_t": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "interrupt",
+      "symbol_kind": "type"
+    },
+    "jiffies": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "kcalloc": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "memory",
+      "symbol_kind": "function_or_symbol"
+    },
+    "kfree": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "memory",
+      "symbol_kind": "function_or_symbol"
+    },
+    "kmalloc": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "memory",
+      "symbol_kind": "function_or_symbol"
+    },
+    "kthread_run": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "kzalloc": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "memory",
+      "symbol_kind": "function_or_symbol"
+    },
+    "le16_to_cpu": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "function_or_symbol"
+    },
+    "le32_to_cpu": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "function_or_symbol"
+    },
+    "le64_to_cpu": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "function_or_symbol"
+    },
+    "likely": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "list_add": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "function_or_symbol"
+    },
+    "list_add_tail": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "function_or_symbol"
+    },
+    "list_del": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "function_or_symbol"
+    },
+    "list_empty": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "function_or_symbol"
+    },
+    "list_first_entry": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "function_or_symbol"
+    },
+    "list_for_each_entry": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "function_or_symbol"
+    },
+    "list_for_each_entry_safe": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "list",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mdelay": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mdev_register_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mdev_register_driver": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mdev_unregister_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mdev_unregister_driver": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mod_timer": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "module_exit": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "function_or_symbol"
+    },
+    "module_init": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "function_or_symbol"
+    },
+    "module_param": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "function_or_symbol"
+    },
+    "module_pci_driver": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "module",
+      "symbol_kind": "function_or_symbol"
+    },
+    "msecs_to_jiffies": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "msleep": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mutex_destroy": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mutex_init": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mutex_lock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mutex_trylock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "mutex_unlock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "napi_alloc_skb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "napi_complete_done": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "napi_consume_skb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "napi_disable": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "napi_enable": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "napi_gro_receive": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "napi_schedule": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "net_device_ops": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "type"
+    },
+    "netdev_err": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netdev_info": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netdev_priv": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netdev_warn": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netif_carrier_off": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netif_carrier_on": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netif_msg_init": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netif_napi_add": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netif_tx_start_all_queues": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "netif_tx_stop_all_queues": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "page_address": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "memory",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_alloc_irq_vectors": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_disable_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_disable_sriov": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_enable_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_enable_sriov": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_free_irq_vectors": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_get_drvdata": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_iomap": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_iounmap": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_irq_vector": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_register_driver": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_release_regions": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_request_regions": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_resource_len": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_resource_start": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_set_drvdata": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_set_master": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_set_power_state": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "power_mgmt",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_unregister_driver": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pci_vfs_assigned": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "pci",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pcim_enable_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "pci",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pr_err": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "pr_info": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "printk": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "logging_debug",
+      "source_group": "printk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "ptp_clock_index": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "ptp",
+      "symbol_kind": "function_or_symbol"
+    },
+    "ptp_clock_register": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "ptp",
+      "symbol_kind": "function_or_symbol"
+    },
+    "ptp_clock_unregister": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "ptp",
+      "symbol_kind": "function_or_symbol"
+    },
+    "queue_delayed_work": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "queue_work": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "rcu_read_lock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "rcu_read_unlock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "readl": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "mmio_bus",
+      "source_group": "io",
+      "symbol_kind": "function_or_symbol"
+    },
+    "readq": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "mmio_bus",
+      "source_group": "io",
+      "symbol_kind": "function_or_symbol"
+    },
+    "register_netdev": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "release_firmware": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "request_firmware": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "userspace_config",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "request_irq": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "interrupt",
+      "source_group": "interrupt",
+      "symbol_kind": "function_or_symbol"
+    },
+    "rtnl_lock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "rtnl_unlock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "s16": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "s32": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "s64": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "schedule_delayed_work": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "schedule_work": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "set_bit": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "skb_frag_size": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "skb_headlen": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "skb_reserve": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "skb_shinfo": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "smp_mb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "macro"
+    },
+    "smp_rmb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "macro"
+    },
+    "smp_wmb": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "macro"
+    },
+    "spin_lock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "spin_lock_bh": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "spin_lock_init": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "spin_lock_irqsave": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "spin_unlock": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "spin_unlock_bh": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "spin_unlock_irqrestore": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "test_and_clear_bit": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "test_and_set_bit": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "test_bit": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "sync_locking",
+      "source_group": "sync",
+      "symbol_kind": "function_or_symbol"
+    },
+    "time_after": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "timer_setup": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "u16": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "u32": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "u64": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "u8": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "endian_unaligned",
+      "source_group": "bitops_types",
+      "symbol_kind": "type"
+    },
+    "udelay": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "timer_time",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "unlikely": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "memory",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "unregister_netdev": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "netstack",
+      "source_group": "netdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "usleep_range": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "work_async",
+      "source_group": "timer_workqueue",
+      "symbol_kind": "function_or_symbol"
+    },
+    "vfio_alloc_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "vfio_put_device": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "vfio_register_group_dev": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "vfio_unregister_group_dev": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "module_device_model",
+      "source_group": "vfio_mdev",
+      "symbol_kind": "function_or_symbol"
+    },
+    "wait_event": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "completion_wait",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "wake_up": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "completion_wait",
+      "source_group": "supplemental",
+      "symbol_kind": "function_or_symbol"
+    },
+    "writel": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "mmio_bus",
+      "source_group": "io",
+      "symbol_kind": "function_or_symbol"
+    },
+    "writeq": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "mmio_bus",
+      "source_group": "io",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xdp_convert_buff_to_frame": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xdp_do_flush": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xdp_rxq_info_reg": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xdp_rxq_info_unreg": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xsk_pool_get_rx_frame_size": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xsk_tx_completed": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xsk_tx_peek_desc": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    },
+    "xsk_uses_need_wakeup": {
+      "portability_relevance": "linux_kernel_api",
+      "semantic_category": "xdp_xsk",
+      "source_group": "xdp_xsk",
+      "symbol_kind": "function_or_symbol"
+    }
+  },
+  "schema_version": "3.1"
+}

@@ -1,0 +1,727 @@
+{
+  "classification_id": "default-include-classification",
+  "freebsd_system_prefix_categories": [
+    {
+      "category": "freebsd_sys",
+      "pattern": "^sys/"
+    },
+    {
+      "category": "freebsd_machine",
+      "pattern": "^machine/"
+    },
+    {
+      "category": "freebsd_dev",
+      "pattern": "^dev/"
+    },
+    {
+      "category": "freebsd_net",
+      "pattern": "^net/"
+    },
+    {
+      "category": "freebsd_netinet",
+      "pattern": "^netinet/"
+    },
+    {
+      "category": "freebsd_netinet6",
+      "pattern": "^netinet6/"
+    },
+    {
+      "category": "freebsd_cam",
+      "pattern": "^cam/"
+    },
+    {
+      "category": "freebsd_contrib",
+      "pattern": "^contrib/"
+    }
+  ],
+  "local_quote_category": "project_or_local",
+  "other_angle_category": "external_or_platform",
+  "posix_headers": [
+    "aio.h",
+    "arpa/inet.h",
+    "dirent.h",
+    "dlfcn.h",
+    "fcntl.h",
+    "fnmatch.h",
+    "ftw.h",
+    "glob.h",
+    "grp.h",
+    "iconv.h",
+    "langinfo.h",
+    "libgen.h",
+    "monetary.h",
+    "mqueue.h",
+    "ndbm.h",
+    "net/if.h",
+    "netdb.h",
+    "netinet/in.h",
+    "netinet/tcp.h",
+    "nl_types.h",
+    "poll.h",
+    "pthread.h",
+    "pwd.h",
+    "regex.h",
+    "sched.h",
+    "search.h",
+    "semaphore.h",
+    "spawn.h",
+    "strings.h",
+    "stropts.h",
+    "sys/ipc.h",
+    "sys/mman.h",
+    "sys/msg.h",
+    "sys/resource.h",
+    "sys/select.h",
+    "sys/sem.h",
+    "sys/shm.h",
+    "sys/socket.h",
+    "sys/stat.h",
+    "sys/statvfs.h",
+    "sys/time.h",
+    "sys/times.h",
+    "sys/types.h",
+    "sys/uio.h",
+    "sys/un.h",
+    "sys/utsname.h",
+    "sys/wait.h",
+    "syslog.h",
+    "tar.h",
+    "termios.h",
+    "trace.h",
+    "ulimit.h",
+    "unistd.h",
+    "utime.h",
+    "utmpx.h",
+    "wordexp.h"
+  ],
+  "posix_category": "posix",
+  "prefix_categories": [
+    {
+      "category": "linux_kernel",
+      "pattern": "^linux/"
+    },
+    {
+      "category": "linux_arch",
+      "pattern": "^asm/"
+    },
+    {
+      "category": "linux_arch",
+      "pattern": "^asm-generic/"
+    },
+    {
+      "category": "linux_network",
+      "pattern": "^net/"
+    },
+    {
+      "category": "linux_uapi",
+      "pattern": "^uapi/"
+    },
+    {
+      "category": "linux_rdma",
+      "pattern": "^rdma/"
+    },
+    {
+      "category": "linux_crypto",
+      "pattern": "^crypto/"
+    },
+    {
+      "category": "linux_trace",
+      "pattern": "^trace/"
+    },
+    {
+      "category": "linux_generated",
+      "pattern": "^generated/"
+    },
+    {
+      "category": "linux_acpi",
+      "pattern": "^acpi/"
+    },
+    {
+      "category": "linux_clocksource",
+      "pattern": "^clocksource/"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/netdevice"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/ethtool"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/ptp_clock_kernel"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/auxiliary_bus"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/xdp"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/bpf"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dma-mapping"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dma-direct"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/interrupt"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/pci"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/netlink"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/skbuff"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/if_vlan"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/if_ether"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/inetdevice"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/ip"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/ipv6"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/tcp"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/udp"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/sctp"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/workqueue"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/timer"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/hrtimer"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/ktime"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/spinlock"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/mutex"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/rwlock"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/rwsem"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/completion"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/atomic"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/bitops"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/bitmap"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/rcupdate"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/rculist"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/slab"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/vmalloc"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/mm"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/gfp"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/page_pool"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/io"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/ioport"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/device"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/module"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/moduleparam"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/kernel"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/types"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/errno"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/err"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/bug"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/printk"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dynamic_debug"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/debugfs"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/sysfs"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/devlink"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/phylink"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/phy"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/mdio"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/mii"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/iommu"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/iova"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/xarray"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/hashtable"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/list"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/rbtree"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/overflow"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/align"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/log2"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/minmax"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/byteorder"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/unaligned"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/if_link"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/netfilter"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/pm"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/pm_runtime"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/pm_wakeup"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/suspend"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/aer"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/pcie-doe"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/crypto"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/xfrm"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/key"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/net_tstamp"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/timecounter"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/clocksource"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/socket"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/filter"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/bpf_verifier"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dim"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/cpu"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/cpumask"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/numa"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/topology"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/irq"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/irqdesc"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/irqreturn"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/hardirq"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/softirq"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/notifier"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/reboot"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/delay"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/jiffies"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/time"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/time64"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/kthread"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/sched"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/preempt"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/lockdep"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/seqlock"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/refcount"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/kref"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/string"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/ctype"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/hex"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/crc32"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/crc32c"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/random"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/uuid"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/scatterlist"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/highmem"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dmaengine"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dma-buf"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dma_remapping"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/intel-iommu"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/mdev"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/vfio"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/vdpa"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/virtio"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/virtio_net"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/macsec"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dcbnl"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/dcb_app"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/tc_act"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/tc_ematch"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/flow_dissector"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/flow_offload"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/netdev_features"
+    },
+    {
+      "category": "linux_drivers",
+      "pattern": "^linux/net_dim"
+    }
+  ],
+  "schema_version": "3.3",
+  "standard_c_headers": [
+    "assert.h",
+    "complex.h",
+    "ctype.h",
+    "errno.h",
+    "fenv.h",
+    "float.h",
+    "inttypes.h",
+    "iso646.h",
+    "limits.h",
+    "locale.h",
+    "math.h",
+    "setjmp.h",
+    "signal.h",
+    "stdalign.h",
+    "stdarg.h",
+    "stdatomic.h",
+    "stdbool.h",
+    "stdbit.h",
+    "stdckdint.h",
+    "stddef.h",
+    "stdint.h",
+    "stdio.h",
+    "stdlib.h",
+    "stdnoreturn.h",
+    "string.h",
+    "tgmath.h",
+    "threads.h",
+    "time.h",
+    "uchar.h",
+    "wchar.h",
+    "wctype.h"
+  ],
+  "standard_category": "standard_c"
+}

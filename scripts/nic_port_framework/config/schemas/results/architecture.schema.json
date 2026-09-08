@@ -1,0 +1,87 @@
+{
+  "$id": "nic-port://result/architecture/3.1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "architectural_decomposition": {
+      "type": "array"
+    },
+    "baseline_fingerprint": {
+      "type": "string"
+    },
+    "confidence": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "type": "string"
+    },
+    "data_state_model": {
+      "type": "array"
+    },
+    "evidence_gaps": {
+      "type": "array"
+    },
+    "feature_model": {
+      "type": "array"
+    },
+    "hardware_protocol_boundary": {
+      "type": "array"
+    },
+    "implementation_dag": {
+      "type": "array"
+    },
+    "open_questions": {
+      "type": "array"
+    },
+    "portability_heatmap": {
+      "type": "array"
+    },
+    "production_gates": {
+      "type": "array"
+    },
+    "project": {
+      "type": "string"
+    },
+    "review_type": {
+      "type": "string"
+    },
+    "runtime_concurrency_model": {
+      "type": "object"
+    },
+    "source_os_service_model": {
+      "type": "array"
+    },
+    "target_os_architecture": {
+      "type": "array"
+    },
+    "verification_architecture": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "review_type",
+    "project",
+    "baseline_fingerprint",
+    "architectural_decomposition",
+    "feature_model",
+    "data_state_model",
+    "runtime_concurrency_model",
+    "hardware_protocol_boundary",
+    "source_os_service_model",
+    "target_os_architecture",
+    "portability_heatmap",
+    "implementation_dag",
+    "verification_architecture",
+    "evidence_gaps",
+    "production_gates",
+    "confidence",
+    "open_questions"
+  ],
+  "title": "NIC Port architecture result",
+  "type": "object"
+}
