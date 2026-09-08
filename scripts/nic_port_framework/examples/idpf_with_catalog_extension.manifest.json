@@ -1,0 +1,13 @@
+{
+  "configuration": {
+    "api_catalogs": {
+      "$append": [
+        "idpf_api_catalog.extension.json"
+      ]
+    }
+  },
+  "includes": [
+    "idpf.manifest.json"
+  ],
+  "manifest_version": "3.3"
+}

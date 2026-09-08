@@ -1,0 +1,123 @@
+{
+  "category_hit_cap": 3,
+  "category_weights": {
+    "atomics_bitops": 3,
+    "auxiliary_bus": 5,
+    "completion_wait": 3,
+    "devmem_zero_copy": 5,
+    "dma": 5,
+    "endian_unaligned": 2,
+    "error_recovery_pci": 3,
+    "inline_crypto": 5,
+    "interrupt": 4,
+    "logging_debug": 1,
+    "memory": 2,
+    "mmio_bus": 3,
+    "module_device_model": 1,
+    "napi_polling": 5,
+    "netstack": 5,
+    "pci": 4,
+    "ptp_timestamping": 4,
+    "rcu": 4,
+    "sync_locking": 3,
+    "timer_time": 3,
+    "userspace_config": 2,
+    "work_async": 3,
+    "xdp_xsk": 5
+  },
+  "class_thresholds": [
+    {
+      "class": "P0",
+      "max_score": 0
+    },
+    {
+      "class": "P1",
+      "max_score": 3
+    },
+    {
+      "class": "P2",
+      "max_score": 8
+    },
+    {
+      "class": "P3",
+      "max_score": 16
+    },
+    {
+      "class": "P4",
+      "max_score": 28
+    },
+    {
+      "class": "P5",
+      "max_score": null
+    }
+  ],
+  "counting": "weighted_unique_category_hits",
+  "detection_source_weights": {
+    "ast_external_call": 1.0,
+    "exact_registry": 1.0,
+    "lexical_exact": 0.75,
+    "macro_expansion": 1.0,
+    "regex_family": 0.5
+  },
+  "documentation_detection_sources": [
+    "ast_external_call",
+    "macro_expansion",
+    "lexical_exact"
+  ],
+  "omit_candidate_source_groups": [
+    "debugfs_sysfs",
+    "module",
+    "ethtool"
+  ],
+  "omit_min_score": 6,
+  "recommendation_rules": [
+    {
+      "max_score": 3,
+      "recommendation": "REUSE_CORE"
+    },
+    {
+      "max_score": 8,
+      "recommendation": "ADAPT_WITH_OS_ABSTRACTION"
+    },
+    {
+      "max_score": 16,
+      "recommendation": "REWRITE_INTEGRATION"
+    },
+    {
+      "max_score": 28,
+      "recommendation": "REDESIGN_TARGET_NATIVE"
+    },
+    {
+      "max_score": null,
+      "recommendation": "DEFER_OR_EXPLICIT_DESIGN_DECISION"
+    }
+  ],
+  "risk_bands": [
+    {
+      "band": "LOW",
+      "max_score": 4
+    },
+    {
+      "band": "MEDIUM",
+      "max_score": 9
+    },
+    {
+      "band": "HIGH",
+      "max_score": 17
+    },
+    {
+      "band": "CRITICAL",
+      "max_score": null
+    }
+  ],
+  "schema_version": "3.1",
+  "scoring_id": "default-portability-risk",
+  "subsystem_adjustments": {
+    "auxiliary_bus_rdma": 4,
+    "error_recovery_pci": 3,
+    "inline_crypto_ipsec": 5,
+    "netstack_integration": 5,
+    "ptp_time": 3,
+    "xdp_xsk": 6
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "request_id": "REQ-...", "decision": "IMPLEMENT_IN_FILE|ADOPT_DESIGN|ESCALATE_PROJECT|DEFER|REJECT|DUPLICATE|NEEDS_EVIDENCE|NOT_APPLICABLE",
+  "rationale": "", "implementation_refs": [], "resulting_test_ids": [], "duplicate_of": null, "defer_until": null
+}

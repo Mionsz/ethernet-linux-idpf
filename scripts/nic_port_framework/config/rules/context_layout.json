@@ -1,0 +1,17 @@
+{
+  "schema_version": "3.1",
+  "architecture_high_risk_limit": 100,
+  "file_preamble_max_lines": 160,
+  "file_preamble_max_chars": 16000,
+  "method_direct_callers_limit": 30,
+  "method_direct_callees_limit": 100,
+  "method_macro_names_limit": 100,
+  "method_macro_definitions_per_name": 20,
+  "method_callback_references_limit": 50,
+  "related_caller_source_items": 6,
+  "related_callee_source_items": 10,
+  "related_source_chars_per_item": 2600,
+  "relevant_structs_limit": 16,
+  "relevant_struct_fields_limit": 90,
+  "relevant_struct_source_chars": 10000
+}

@@ -1,0 +1,78 @@
+{
+  "$id": "nic-port://result/target/3.1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "acceptance_criteria_status": {
+      "type": "array"
+    },
+    "confidence": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "type": "string"
+    },
+    "data_structures": {
+      "type": "array"
+    },
+    "design": {
+      "type": "object"
+    },
+    "error_handling": {
+      "type": "object"
+    },
+    "feature_ids": {
+      "type": "array"
+    },
+    "obligation_analysis": {
+      "type": "array"
+    },
+    "open_questions": {
+      "type": "array"
+    },
+    "port_requests": {
+      "type": "array"
+    },
+    "risks": {
+      "type": "array"
+    },
+    "source_mapping": {
+      "type": "object"
+    },
+    "synchronization": {
+      "type": "object"
+    },
+    "target_interfaces": {
+      "type": "array"
+    },
+    "target_item_id": {
+      "type": "string"
+    },
+    "tests": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "target_item_id",
+    "obligation_analysis",
+    "design",
+    "target_interfaces",
+    "source_mapping",
+    "data_structures",
+    "synchronization",
+    "error_handling",
+    "tests",
+    "acceptance_criteria_status",
+    "confidence",
+    "open_questions",
+    "port_requests",
+    "risks"
+  ],
+  "title": "NIC Port target work item result",
+  "type": "object"
+}

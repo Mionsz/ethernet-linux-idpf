@@ -1,0 +1,99 @@
+{
+  "$id": "nic-port://result/subsystems/3.1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "confidence": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "type": "string"
+    },
+    "data_ownership": {
+      "type": "array"
+    },
+    "dependencies": {
+      "type": "array"
+    },
+    "entry_points": {
+      "type": "array"
+    },
+    "evidence_gaps": {
+      "type": "array"
+    },
+    "failure_reset_quiesce": {
+      "type": "array"
+    },
+    "feature_ids": {
+      "type": "array"
+    },
+    "hardware_protocol_effects": {
+      "type": "array"
+    },
+    "implementation_order": {
+      "type": "array"
+    },
+    "open_questions": {
+      "type": "array"
+    },
+    "priority": {
+      "type": "string"
+    },
+    "risks": {
+      "type": "array"
+    },
+    "runtime_concurrency": {
+      "type": "object"
+    },
+    "semantic_responsibility": {
+      "type": "string"
+    },
+    "semantics_to_preserve": {
+      "type": "array"
+    },
+    "source_os_incidental": {
+      "type": "array"
+    },
+    "state_machine": {
+      "type": "array"
+    },
+    "subsystem": {
+      "type": "string"
+    },
+    "target_architecture": {
+      "type": "object"
+    },
+    "tests": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "subsystem",
+    "semantic_responsibility",
+    "feature_ids",
+    "priority",
+    "entry_points",
+    "state_machine",
+    "data_ownership",
+    "runtime_concurrency",
+    "hardware_protocol_effects",
+    "failure_reset_quiesce",
+    "source_os_incidental",
+    "semantics_to_preserve",
+    "target_architecture",
+    "dependencies",
+    "implementation_order",
+    "tests",
+    "risks",
+    "evidence_gaps",
+    "confidence",
+    "open_questions"
+  ],
+  "title": "NIC Port subsystems result",
+  "type": "object"
+}

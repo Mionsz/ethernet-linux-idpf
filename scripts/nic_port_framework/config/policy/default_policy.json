@@ -1,0 +1,210 @@
+{
+  "consistency": {
+    "block_high_severity_at_final": true,
+    "known_nonsleepable_lock_classes": [
+      "spin",
+      "raw_spin",
+      "mtx_spin"
+    ],
+    "known_sleepable_lock_classes": [
+      "mutex",
+      "sx",
+      "rw_sleep",
+      "semaphore",
+      "cv"
+    ]
+  },
+  "context_compaction": {
+    "architecture_for_method_chars": 24000,
+    "evidence_result_chars": 12000,
+    "file_result_chars": 18000,
+    "method_result_chars": 10000,
+    "subsystem_result_chars": 30000
+  },
+  "evidence": {
+    "critical_categories": [
+      "pci",
+      "dma",
+      "mmio_bus",
+      "interrupt",
+      "sync_locking",
+      "atomics_bitops",
+      "rcu",
+      "work_async",
+      "timer_time",
+      "completion_wait",
+      "netstack",
+      "endian_unaligned"
+    ],
+    "dedupe": "symbol_category",
+    "include_method_questions": true
+  },
+  "evidence_verification": {
+    "authority_classes": {
+      "A0": [
+        "unknown"
+      ],
+      "A1": [
+        "secondary",
+        "blog"
+      ],
+      "A2": [
+        "mailing_list",
+        "community_issue",
+        "reference_driver"
+      ],
+      "A3": [
+        "upstream_commit",
+        "reviewed_mailing_list",
+        "official_issue"
+      ],
+      "A4": [
+        "official_os_docs",
+        "upstream_source",
+        "vendor_source",
+        "official_manual"
+      ],
+      "A5": [
+        "formal_spec",
+        "hardware_spec",
+        "protocol_spec"
+      ]
+    },
+    "minimum_critical_authority": "A4",
+    "minimum_verified_authority": "A3",
+    "online_timeout_seconds": 8,
+    "require_locator": true
+  },
+  "gates": {
+    "evidence": {
+      "min_method_confidence": "C2",
+      "require_method_coverage": 1.0
+    },
+    "files": {
+      "min_evidence_confidence": "C4",
+      "min_method_confidence": "C3",
+      "require_critical_evidence_resolution": 1.0,
+      "require_method_coverage": 1.0
+    },
+    "final": {
+      "min_architecture_confidence": "C4",
+      "min_evidence_confidence": "C4",
+      "min_subsystem_confidence": "C3",
+      "require_critical_evidence_resolution": 1.0,
+      "require_subsystem_coverage": 1.0
+    },
+    "methods": {
+      "min_architecture_confidence": "C3",
+      "min_target_confidence": "C2",
+      "require_architecture_valid": true,
+      "require_target_coverage": 1.0
+    },
+    "subsystems": {
+      "min_file_confidence": "C3",
+      "require_file_coverage": 1.0
+    },
+    "target": {
+      "min_architecture_confidence": "C3",
+      "require_architecture_valid": true,
+      "require_target_plan": true
+    }
+  },
+  "llm": {
+    "default_provider": "copilot",
+    "providers": {
+      "copilot": {
+        "api_base": "https://api.githubcopilot.com",
+        "max_output_tokens": 256000,
+        "model": "claude-opus-5",
+        "temperature": 0.1,
+        "token_url": "https://api.github.com/copilot_internal/v2/token"
+      }
+    }
+  },
+  "policy_version": 1,
+  "prompt_budgets": {
+    "architecture": 1024000,
+    "evidence": 1024000,
+    "files": 1024000,
+    "final": 1024000,
+    "methods": 1024000,
+    "subsystems": 1024000,
+    "target": 1024000
+  },
+  "registries": {
+    "final_project_request_decisions": [
+      "IMPLEMENT",
+      "ADOPT_ARCHITECTURE",
+      "DEFER",
+      "REJECT",
+      "DUPLICATE",
+      "NEEDS_EVIDENCE"
+    ],
+    "final_project_risk_decisions": [
+      "MITIGATE",
+      "ACCEPT",
+      "TRANSFER",
+      "DEFER",
+      "REJECT_INVALID",
+      "DUPLICATE",
+      "NEEDS_EVIDENCE"
+    ],
+    "project_scope_requires_cross_file_impact": true,
+    "request_decisions": [
+      "IMPLEMENT_IN_FILE",
+      "ADOPT_DESIGN",
+      "ESCALATE_PROJECT",
+      "DEFER",
+      "REJECT",
+      "DUPLICATE",
+      "NEEDS_EVIDENCE",
+      "NOT_APPLICABLE"
+    ],
+    "require_file_decisions": true,
+    "risk_decisions": [
+      "MITIGATE_IN_FILE",
+      "ACCEPT",
+      "ESCALATE_PROJECT",
+      "DEFER",
+      "REJECT_INVALID",
+      "DUPLICATE",
+      "NEEDS_EVIDENCE",
+      "TRANSFER"
+    ],
+    "strict_decision_artifact_refs": false
+  },
+  "runner": {
+    "jobs": 1,
+    "retries": 1,
+    "timeout_seconds": 1800
+  },
+  "schema_version": "3.0",
+  "target_access": {
+    "_comment": "Stages whose prompts carry an assigned target-environment endpoint. Removing a stage keeps its already-accepted results valid, because the rendered prompt stops changing.",
+    "prompt_stages": [
+      "architecture",
+      "target",
+      "evidence",
+      "files",
+      "subsystems",
+      "final"
+    ]
+  },
+  "traceability": {
+    "block_final_missing_required_tests": false,
+    "require_test_feature_link": true,
+    "required_test_priorities": [
+      "P0",
+      "P1"
+    ],
+    "warn_final_missing_required_tests": true
+  },
+  "workspace_lock": {
+    "_comment": "Behaviour when another process holds the orchestration workspace lock. on_timeout: 'override' continues without the lock, 'exit' aborts. While waiting on a terminal, typing 'yes' overrides immediately.",
+    "announce_interval_seconds": 60,
+    "interactive_override": true,
+    "on_timeout": "override",
+    "poll_interval_seconds": 5,
+    "wait_timeout_seconds": 3600
+  }
+}

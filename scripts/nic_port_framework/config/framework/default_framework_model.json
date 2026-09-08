@@ -1,0 +1,146 @@
+{
+  "authority_levels": [
+    "A0",
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5"
+  ],
+  "confidence_levels": [
+    "C0",
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "C5"
+  ],
+  "configuration_integrity": {
+    "api_catalog_conflict_policy": "error"
+  },
+  "framework_model_id": "default-framework-model",
+  "high_confidence_evidence_stages": [
+    "architecture",
+    "evidence",
+    "subsystems",
+    "final"
+  ],
+  "high_confidence_levels": [
+    "C4",
+    "C5"
+  ],
+  "materialized_template_roles": [
+    "record.method_port_request",
+    "record.method_risk",
+    "record.file_request_decision",
+    "record.file_risk_decision",
+    "record.project_request_decision",
+    "record.project_risk_decision",
+    "record.test_record",
+    "record.spec_manifest_example",
+    "orchestrator.process"
+  ],
+  "portability_classes": [
+    "P0",
+    "P1",
+    "P2",
+    "P3",
+    "P4",
+    "P5"
+  ],
+  "result_schemas": {
+    "architecture": "../schemas/results/architecture.schema.json",
+    "evidence": "../schemas/results/evidence.schema.json",
+    "files": "../schemas/results/files.schema.json",
+    "final": "../schemas/results/final.schema.json",
+    "methods": "../schemas/results/methods.schema.json",
+    "subsystems": "../schemas/results/subsystems.schema.json",
+    "target": "../schemas/results/target.schema.json"
+  },
+  "risk_impact_levels": [
+    "I1",
+    "I2",
+    "I3",
+    "I4",
+    "I5"
+  ],
+  "risk_likelihood_levels": [
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5"
+  ],
+  "schema_version": "3.1",
+  "stage_migration_defaults": {
+    "files": {
+      "request_decisions": [],
+      "risk_decisions": []
+    },
+    "final": {
+      "project_request_decisions": [],
+      "project_risk_decisions": [],
+      "traceability_review": {}
+    },
+    "methods": {
+      "port_requests": [],
+      "risks": [],
+      "spec_clause_ids": []
+    },
+    "target": {
+      "port_requests": [],
+      "risks": [],
+      "spec_clause_ids": []
+    }
+  },
+  "stage_validation": {
+    "architecture": {
+      "baseline_field": "baseline_fingerprint",
+      "fixed_fields": {
+        "review_type": "architecture"
+      }
+    },
+    "evidence": {
+      "identity_field": "evidence_id",
+      "status_field": "status",
+      "status_values": [
+        "NEEDED",
+        "SEARCHED",
+        "EVIDENCE_FOUND",
+        "VERIFIED",
+        "BLOCKED"
+      ],
+      "verified_requires_nonempty": [
+        "sources"
+      ],
+      "verified_value": "VERIFIED"
+    },
+    "files": {
+      "identity_field": "file"
+    },
+    "final": {
+      "baseline_field": "baseline_fingerprint",
+      "fixed_fields": {
+        "review_type": "final_port_design"
+      }
+    },
+    "methods": {
+      "identity_field": "function_key"
+    },
+    "subsystems": {
+      "identity_field": "subsystem"
+    },
+    "target": {
+      "identity_field": "target_item_id"
+    }
+  },
+  "stages": [
+    "architecture",
+    "target",
+    "methods",
+    "evidence",
+    "files",
+    "subsystems",
+    "final"
+  ]
+}

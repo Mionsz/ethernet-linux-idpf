@@ -1,0 +1,8 @@
+{
+  "local_id": "REQ1",
+  "scope_hint": "file|project",
+  "category": "api|architecture|shared_abstraction|dependency|build|test|documentation|other",
+  "title": "", "problem": "", "requested_change": "", "rationale": "",
+  "cross_file_impact": "required when scope_hint=project",
+  "feature_ids": [], "blocking": false, "acceptance_criteria": [], "dependencies": [], "evidence_refs": []
+}

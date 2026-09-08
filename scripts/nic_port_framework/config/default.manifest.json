@@ -1,0 +1,10 @@
+{
+  "includes": [
+    "profiles/defaults.json"
+  ],
+  "manifest_version": "3.3",
+  "schemas": {
+    "input_manifest": "schemas/input_manifest.schema.json",
+    "output_manifest": "schemas/output_manifest.schema.json"
+  }
+}

@@ -1,0 +1,127 @@
+{
+  "$id": "nic-port://result/final/3.1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "advanced_feature_decisions": {
+      "type": "array"
+    },
+    "baseline_fingerprint": {
+      "type": "string"
+    },
+    "confidence": {
+      "enum": [
+        "C0",
+        "C1",
+        "C2",
+        "C3",
+        "C4",
+        "C5"
+      ],
+      "type": "string"
+    },
+    "configuration_observability": {
+      "type": "object"
+    },
+    "control_plane_design": {
+      "type": "object"
+    },
+    "datapath_design": {
+      "type": "object"
+    },
+    "dma_design": {
+      "type": "object"
+    },
+    "feature_matrix": {
+      "type": "array"
+    },
+    "final_architecture": {
+      "type": "object"
+    },
+    "implementation_dag": {
+      "type": "array"
+    },
+    "interrupt_design": {
+      "type": "object"
+    },
+    "mmio_design": {
+      "type": "object"
+    },
+    "network_stack_integration": {
+      "type": "object"
+    },
+    "open_risks_decisions": {
+      "type": "array"
+    },
+    "performance_acceptance": {
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "project_request_decisions": {
+      "type": "array"
+    },
+    "project_risk_decisions": {
+      "type": "array"
+    },
+    "reset_recovery_design": {
+      "type": "object"
+    },
+    "review_type": {
+      "type": "string"
+    },
+    "scope_and_baseline": {
+      "type": "object"
+    },
+    "security_stability_review": {
+      "type": "array"
+    },
+    "target_data_model": {
+      "type": "array"
+    },
+    "target_runtime_model": {
+      "type": "object"
+    },
+    "test_architecture": {
+      "type": "object"
+    },
+    "traceability_review": {
+      "type": "object"
+    },
+    "upstream_readiness": {
+      "type": "array"
+    }
+  },
+  "required": [
+    "review_type",
+    "project",
+    "baseline_fingerprint",
+    "scope_and_baseline",
+    "feature_matrix",
+    "final_architecture",
+    "target_data_model",
+    "target_runtime_model",
+    "dma_design",
+    "mmio_design",
+    "control_plane_design",
+    "datapath_design",
+    "interrupt_design",
+    "network_stack_integration",
+    "reset_recovery_design",
+    "configuration_observability",
+    "advanced_feature_decisions",
+    "implementation_dag",
+    "test_architecture",
+    "performance_acceptance",
+    "security_stability_review",
+    "upstream_readiness",
+    "open_risks_decisions",
+    "project_request_decisions",
+    "project_risk_decisions",
+    "traceability_review",
+    "confidence"
+  ],
+  "title": "NIC Port final result",
+  "type": "object"
+}

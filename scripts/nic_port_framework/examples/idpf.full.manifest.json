@@ -1,0 +1,63 @@
+{
+  "bootstrap": {
+    "run_on_prepare": true,
+    "steps": [
+      {
+        "argv": [
+          "mkdir",
+          "-p",
+          "${FRAMEWORK_OUT_DIR}"
+        ],
+        "description": "Create the framework output directory used by every later step.",
+        "id": "create-output-dir"
+      },
+      {
+        "argv": [
+          "clang++-22",
+          "-std=c++17",
+          "-O2",
+          "${FRAMEWORK_DIR}/nic_port_clang_extractor.cpp",
+          "-I/usr/lib/llvm-22/include",
+          "-D_GNU_SOURCE",
+          "-D_GLIBCXX_USE_CXX11_ABI=1",
+          "-D__STDC_CONSTANT_MACROS",
+          "-D__STDC_FORMAT_MACROS",
+          "-D__STDC_LIMIT_MACROS",
+          "-fno-exceptions",
+          "-L/usr/lib/llvm-22/lib",
+          "-lLLVM-22",
+          "-lclang-cpp",
+          "-o",
+          "${FRAMEWORK_OUT_DIR}/nic-port-clang-extractor"
+        ],
+        "description": "Build the dedicated Clang LibTooling extractor used by this analysis variant.",
+        "id": "build-libtooling-extractor"
+      },
+      {
+        "argv": [
+          "make",
+          "-C",
+          "${FRAMEWORK_REPO_DIR}"
+        ],
+        "description": "Build the source driver so Kbuild .cmd information and generated files represent the selected variant.",
+        "id": "build-source-driver"
+      },
+      {
+        "argv": [
+          "python3",
+          "${KERNEL_BUILD_DIR}/scripts/clang-tools/gen_compile_commands.py",
+          "-d",
+          "${FRAMEWORK_REPO_DIR}",
+          "-o",
+          "${FRAMEWORK_OUT_DIR}/compile_commands.json"
+        ],
+        "description": "Generate the authoritative Kbuild compilation database from the built out-of-tree module tree.",
+        "id": "generate-compile-database"
+      }
+    ]
+  },
+  "includes": [
+    "idpf.manifest.json"
+  ],
+  "manifest_version": "3.3"
+}

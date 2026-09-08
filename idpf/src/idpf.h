@@ -26,8 +26,10 @@
  * Core method names are NOT renamed per architectural constraint.
  */
 
-#ifndef _IDPF_H_
-#define _IDPF_H_
+#define IDPF_DRV_NAME "idpf"
+#define IDPF_DRV_VER "1.0.15"
+
+#define IDPF_M(m, s)	((m) << (s))
 
 /* -----------------------------------------------------------------------
  * FreeBSD kernel headers — authoritative for all OS-facing contracts.

@@ -1,0 +1,745 @@
+{
+  "schema_version": "1.0",
+  "target_profile_id": "freebsd-iflib",
+  "name": "FreeBSD iflib network driver",
+  "target_os": "FreeBSD",
+  "driver_framework": "iflib",
+  "framework_reference": "iflib(9)",
+  "description": "Destination-OS profile for porting a Linux netdev driver to a FreeBSD iflib driver. Declares (a) which Linux-only source surfaces must be removed before the per-method porting loop, and (b) the target-mandated work items that have no Linux counterpart and must therefore be created rather than translated.",
+
+  "exclusion": {
+    "_comment": "Rules are evaluated in order; the first match decides. keep_overrides are evaluated before every rule and always win. disposition: drop = out of scope for this target, no replacement; replace = the Linux mechanism is superseded by the listed target work items; defer = valid on the target but out of scope for the initial port.",
+    "keep_overrides": [
+      {
+        "rule_id": "KEEP-CONTROLQ",
+        "reason": "The virtchnl control queue is transport-independent and is required by every target work item that talks to the device.",
+        "match": {"path_globs": ["idpf_controlq.c", "idpf_controlq_setup.c", "idpf_controlq*.h"]}
+      },
+      {
+        "rule_id": "KEEP-HW-DEFINITIONS",
+        "reason": "Register maps, descriptor layouts and virtchnl message definitions are hardware contracts, not OS surfaces.",
+        "match": {"path_globs": ["idpf_lan_*.h", "idpf_devids.h", "virtchnl2*.h", "idpf_mem.h"]}
+      }
+    ],
+    "rules": [
+      {
+        "rule_id": "EXC-KCOMPAT",
+        "disposition": "drop",
+        "rationale": "Linux kernel-version compatibility shims. They exist to paper over differences between Linux releases and carry no semantics to port.",
+        "match": {"path_globs": ["kcompat*.c", "kcompat*.h", "auxiliary_compat.h"]}
+      },
+      {
+        "rule_id": "EXC-GENERATED-MODULE-GLUE",
+        "disposition": "drop",
+        "rationale": "Generated Linux module glue. The target equivalent is written from scratch as TGT-MOD-001.",
+        "replaced_by": ["TGT-MOD-001"],
+        "match": {"path_globs": ["*.mod.c"]}
+      },
+      {
+        "rule_id": "EXC-DEVLINK",
+        "disposition": "replace",
+        "rationale": "devlink is a Linux netlink subsystem. FreeBSD exposes the same class of device configuration and health information through the sysctl tree.",
+        "replaced_by": ["TGT-SYSCTL-001", "TGT-SYSCTL-002"],
+        "match": {"path_globs": ["idpf_devlink.*"]}
+      },
+      {
+        "rule_id": "EXC-AUXILIARY-BUS-IDC",
+        "disposition": "drop",
+        "rationale": "Inter-driver communication over the Linux auxiliary bus (RDMA peer driver). FreeBSD has no auxiliary bus and RDMA peering is out of scope for the initial port.",
+        "match": {"path_globs": ["idpf_idc.c", "iidc*.h", "idc_generic.h"]}
+      },
+      {
+        "rule_id": "EXC-XDP-AF-XDP",
+        "disposition": "drop",
+        "rationale": "XDP and AF_XDP zero-copy sockets have no FreeBSD equivalent; iflib has no XDP hook.",
+        "match": {"path_globs": ["idpf_xsk.*"]}
+      },
+      {
+        "rule_id": "EXC-VDCM-ADI",
+        "disposition": "drop",
+        "rationale": "VFIO mediated-device / Scalable IOV assignable device interfaces are Linux VFIO constructs. FreeBSD PCI passthrough uses a different model and is out of scope.",
+        "match": {"path_globs": ["idpf_adi.*", "idpf_vdcm*.*"]}
+      },
+      {
+        "rule_id": "EXC-ETHTOOL",
+        "disposition": "replace",
+        "rationale": "ethtool is a Linux ioctl ABI. Its responsibilities split across the FreeBSD media layer, interface capabilities, counters and the sysctl tree.",
+        "replaced_by": ["TGT-MEDIA-001", "TGT-OFFLOAD-001", "TGT-STATS-001", "TGT-SYSCTL-001"],
+        "match": {"path_globs": ["idpf_ethtool.c"]}
+      },
+      {
+        "rule_id": "EXC-XDP-FAMILY-ONLY",
+        "disposition": "drop",
+        "rationale": "Every Linux-specific construct in the function belongs to an XDP/zero-copy family with no target counterpart.",
+        "match": {"feature_family_only": ["xdp_af_xdp", "devmem_zero_copy"]}
+      },
+      {
+        "rule_id": "EXC-AUXBUS-FAMILY-ONLY",
+        "disposition": "drop",
+        "rationale": "Every Linux-specific construct in the function belongs to the auxiliary bus family, which does not exist on the target.",
+        "match": {"feature_family_only": ["auxiliary_bus"]}
+      },
+      {
+        "rule_id": "EXC-SYSFS-FAMILY-ONLY",
+        "disposition": "replace",
+        "rationale": "The function exists only to expose state through sysfs/procfs/debugfs. On the target this surface is the sysctl tree.",
+        "replaced_by": ["TGT-SYSCTL-001"],
+        "match": {"feature_family_only": ["sysfs_procfs_debugfs"]}
+      },
+      {
+        "rule_id": "EXC-SUBSYSTEM-OUT-OF-SCOPE",
+        "disposition": "defer",
+        "rationale": "The function belongs exclusively to subsystems that are out of scope for the initial iflib port.",
+        "match": {"subsystem_only": ["xdp_xsk", "auxiliary_bus_rdma", "virtualization", "inline_crypto_ipsec"]}
+      }
+    ]
+  },
+
+  "workflows": [
+    {"workflow_id": "WF-MODULE", "title": "Module and driver registration", "order": 1,
+     "items": ["TGT-MOD-001", "TGT-MOD-002"]},
+    {"workflow_id": "WF-ATTACH", "title": "Device attach and iflib context bring-up", "order": 2,
+     "items": ["TGT-ATT-001", "TGT-ATT-002", "TGT-ATT-003", "TGT-ATT-004"]},
+    {"workflow_id": "WF-DMA", "title": "DMA and queue memory", "order": 3,
+     "items": ["TGT-DMA-001", "TGT-DMA-002", "TGT-DMA-003"]},
+    {"workflow_id": "WF-DATAPATH", "title": "iflib datapath methods", "order": 4,
+     "items": ["TGT-TX-001", "TGT-TX-002", "TGT-RX-001", "TGT-RX-002"]},
+    {"workflow_id": "WF-INTR", "title": "Interrupts and MSI-X", "order": 5,
+     "items": ["TGT-INT-001", "TGT-INT-002", "TGT-INT-003"]},
+    {"workflow_id": "WF-CTRL", "title": "Interface control plane", "order": 6,
+     "items": ["TGT-CTL-001", "TGT-CTL-002", "TGT-CTL-003", "TGT-CTL-004", "TGT-CTL-005"]},
+    {"workflow_id": "WF-MEDIA", "title": "Media, link and capabilities", "order": 7,
+     "items": ["TGT-MEDIA-001", "TGT-OFFLOAD-001"]},
+    {"workflow_id": "WF-VIRTCHNL", "title": "Control-plane transport on the target", "order": 8,
+     "items": ["TGT-VC-001", "TGT-VC-002"]},
+    {"workflow_id": "WF-SYNC", "title": "Synchronization, deferred work and timers", "order": 9,
+     "items": ["TGT-SYNC-001", "TGT-SYNC-002"]},
+    {"workflow_id": "WF-OBS", "title": "Observability", "order": 10,
+     "items": ["TGT-STATS-001", "TGT-SYSCTL-001", "TGT-SYSCTL-002"]},
+    {"workflow_id": "WF-BUILD", "title": "Build and validation", "order": 11,
+     "items": ["TGT-BLD-001", "TGT-BLD-002"]}
+  ],
+
+  "work_items": [
+    {
+      "item_id": "TGT-MOD-001",
+      "workflow_id": "WF-MODULE",
+      "title": "Kernel module declaration and load/unload lifecycle",
+      "mandatory": true,
+      "replaces_source_mechanism": "module_init/module_exit, MODULE_* macros, pci_register_driver",
+      "target_api": ["DRIVER_MODULE", "MODULE_DEPEND", "MODULE_VERSION", "module_event_handler", "DEVMETHOD"],
+      "obligations": [
+        "Declare the driver with DRIVER_MODULE against the pci bus and a device_method_t table.",
+        "Declare MODULE_DEPEND on pci and iflib, and MODULE_VERSION.",
+        "Handle MOD_LOAD/MOD_UNLOAD/MOD_QUIESCE, refusing unload while interfaces are attached.",
+        "Never execute device work from the module event handler."
+      ],
+      "acceptance_criteria": [
+        "kldload followed by kldunload completes without a leaked reference or panic.",
+        "Repeated load/unload cycles leave no allocated memory or busdma tags behind."
+      ],
+      "source_inputs": {"subsystems": ["pci_lifecycle"], "feature_families": ["module_lifecycle"]},
+      "references": ["module(9)", "DRIVER_MODULE(9)", "iflib(9)"]
+    },
+    {
+      "item_id": "TGT-MOD-002",
+      "workflow_id": "WF-MODULE",
+      "title": "PCI probe and device identification table",
+      "mandatory": true,
+      "replaces_source_mechanism": "struct pci_device_id table and pci_driver.probe",
+      "target_api": ["device_probe", "pci_vendor_info_t", "iflib_device_probe", "device_set_desc"],
+      "obligations": [
+        "Express the supported device list as a pci_vendor_info_t array referenced from the shared context.",
+        "Return the correct BUS_PROBE_* precedence and set the device description.",
+        "Match the device identifier set of the source driver exactly; do not silently widen or narrow it."
+      ],
+      "acceptance_criteria": [
+        "Every device identifier supported by the source driver is present in the target table.",
+        "Probe attaches on supported hardware and declines on unrelated devices."
+      ],
+      "source_inputs": {"subsystems": ["pci_lifecycle"], "feature_families": ["pci_driver_binding"]},
+      "references": ["pci(9)", "device_probe(9)", "iflib(9)"]
+    },
+    {
+      "item_id": "TGT-ATT-001",
+      "workflow_id": "WF-ATTACH",
+      "title": "Shared context (if_shared_ctx_t) definition",
+      "mandatory": true,
+      "replaces_source_mechanism": "implicit netdev/driver constants spread across the Linux probe path",
+      "target_api": ["if_shared_ctx_t", "isc_q_align", "isc_tx_maxsize", "isc_tx_maxsegsize", "isc_rx_maxsize", "isc_rx_nsegments", "isc_ntxd_min/default/max", "isc_nrxd_min/default/max", "isc_admin_intrcnt", "isc_flags"],
+      "obligations": [
+        "Derive every descriptor-ring bound from the hardware definitions rather than from Linux defaults.",
+        "Declare TX and RX segment limits consistent with the descriptor format actually used.",
+        "Declare the number of free lists per RX queue to match the buffer-queue model of the device.",
+        "State explicitly which capability flags the driver claims and why."
+      ],
+      "acceptance_criteria": [
+        "Every field is traceable to a hardware definition or an explicit design decision recorded in this item.",
+        "Ring size bounds accepted by iflib match the device descriptor-count constraints."
+      ],
+      "source_inputs": {"subsystems": ["configuration", "tx", "rx"], "feature_families": []},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-ATT-002",
+      "workflow_id": "WF-ATTACH",
+      "title": "ifdi_attach_pre: resource allocation and software context",
+      "mandatory": true,
+      "replaces_source_mechanism": "the first half of the Linux probe function",
+      "target_api": ["ifdi_attach_pre", "iflib_get_softc", "iflib_get_softc_ctx", "pci_enable_busmaster", "bus_alloc_resource_any", "rman_get_bustag"],
+      "obligations": [
+        "Map BARs and record bus tag/handle for register access before any device access.",
+        "Populate if_softc_ctx_t: queue counts, descriptor counts, capabilities, MSI-X vector count, TX/RX queue sizes.",
+        "Complete device reset and capability negotiation before returning, since iflib allocates queues immediately after.",
+        "Return a non-zero error rather than leaving the context partially initialised."
+      ],
+      "acceptance_criteria": [
+        "A failure at any point unwinds every resource allocated so far.",
+        "scctx values reported to iflib match what the hardware negotiation actually granted."
+      ],
+      "source_inputs": {"subsystems": ["pci_lifecycle", "configuration", "reset_recovery"], "feature_families": ["pci_driver_binding", "mmio_register_access"]},
+      "references": ["iflib(9)", "pci(9)", "bus_alloc_resource(9)"]
+    },
+    {
+      "item_id": "TGT-ATT-003",
+      "workflow_id": "WF-ATTACH",
+      "title": "ifdi_attach_post: interface finalisation",
+      "mandatory": true,
+      "replaces_source_mechanism": "register_netdev and the netdev feature/ops assignment",
+      "target_api": ["ifdi_attach_post", "iflib_get_ifp", "if_setcapabilities", "if_setcapenable", "ifmedia_add", "ifmedia_set"],
+      "obligations": [
+        "Publish media types and initial media state.",
+        "Set the interface capabilities and the enabled subset.",
+        "Do not register the ifnet directly; iflib owns interface registration."
+      ],
+      "acceptance_criteria": [
+        "ifconfig reports the interface with the expected capability and media lists after attach."
+      ],
+      "source_inputs": {"subsystems": ["netstack_integration", "link_media"], "feature_families": ["network_device_registration", "phy_link_management"]},
+      "references": ["iflib(9)", "ifmedia(9)", "ifnet(9)"]
+    },
+    {
+      "item_id": "TGT-ATT-004",
+      "workflow_id": "WF-ATTACH",
+      "title": "ifdi_detach and teardown ordering",
+      "mandatory": true,
+      "replaces_source_mechanism": "pci_driver.remove and unregister_netdev",
+      "target_api": ["ifdi_detach", "iflib_device_detach", "bus_release_resource", "bus_teardown_intr"],
+      "obligations": [
+        "Quiesce the device before releasing any resource that the device can still write to.",
+        "Drain deferred work and stop all timers before freeing the structures they reference.",
+        "Release resources in the exact reverse order of acquisition."
+      ],
+      "acceptance_criteria": [
+        "Detach under active traffic does not produce use-after-free or DMA to freed memory.",
+        "All busdma tags, maps and interrupt handlers are released."
+      ],
+      "source_inputs": {"subsystems": ["pci_lifecycle", "reset_recovery"], "feature_families": ["module_lifecycle"]},
+      "references": ["iflib(9)", "bus_release_resource(9)"]
+    },
+    {
+      "item_id": "TGT-DMA-001",
+      "workflow_id": "WF-DMA",
+      "title": "busdma tag strategy for descriptor rings and buffers",
+      "mandatory": true,
+      "replaces_source_mechanism": "dma_alloc_coherent, dma_map_single/dma_map_page and the Linux DMA mask model",
+      "target_api": ["bus_dma_tag_create", "iflib_dma_alloc", "iflib_dma_free", "bus_dmamap_load", "bus_dmamap_sync"],
+      "obligations": [
+        "Separate tags for descriptor rings (coherent, aligned) and packet buffers (streaming, segmented).",
+        "Set maxsize, nsegments and maxsegsize from the descriptor format, not from arbitrary constants.",
+        "State the boundary and alignment constraints that the hardware imposes on each ring.",
+        "Record which tags iflib creates on the driver's behalf and which the driver must create itself."
+      ],
+      "acceptance_criteria": [
+        "Every DMA allocation names the tag it comes from and the sync operations that guard it.",
+        "No allocation relies on physically contiguous memory unless the hardware requires it."
+      ],
+      "source_inputs": {"subsystems": ["dma_memory"], "feature_families": ["dma_buffer_management"]},
+      "references": ["bus_dma(9)", "iflib(9)"]
+    },
+    {
+      "item_id": "TGT-DMA-002",
+      "workflow_id": "WF-DMA",
+      "title": "ifdi_tx_queues_alloc and ifdi_rx_queues_alloc",
+      "mandatory": true,
+      "replaces_source_mechanism": "driver-private queue allocation performed during Linux open/probe",
+      "target_api": ["ifdi_tx_queues_alloc", "ifdi_rx_queues_alloc", "ifdi_queues_free"],
+      "obligations": [
+        "Accept the virtual and physical ring addresses that iflib supplies; do not allocate the descriptor rings again.",
+        "Attach driver-private queue state to the iflib-provided queue arrays.",
+        "Handle the split-queue model of the device explicitly: map each iflib queue index onto the correct hardware queue and buffer queue.",
+        "Free everything allocated here, and only that, in ifdi_queues_free."
+      ],
+      "acceptance_criteria": [
+        "Queue allocation failure at any index unwinds all previously allocated queues.",
+        "The queue index mapping is documented and reversible."
+      ],
+      "source_inputs": {"subsystems": ["tx", "rx", "dma_memory"], "feature_families": []},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-DMA-003",
+      "workflow_id": "WF-DMA",
+      "title": "DMA synchronization placement",
+      "mandatory": true,
+      "replaces_source_mechanism": "implicit ordering provided by the Linux DMA API plus dma_wmb/dma_rmb",
+      "target_api": ["bus_dmamap_sync", "BUS_DMASYNC_PREREAD", "BUS_DMASYNC_PREWRITE", "BUS_DMASYNC_POSTREAD", "BUS_DMASYNC_POSTWRITE"],
+      "obligations": [
+        "Name every point where a descriptor or buffer ownership transfer happens and the sync call that guards it.",
+        "Pair every PRE sync with the matching POST sync on the same map.",
+        "Do not substitute a CPU memory barrier for a busdma sync; they solve different problems."
+      ],
+      "acceptance_criteria": [
+        "Every descriptor read after device write is preceded by a POSTREAD sync.",
+        "Every descriptor write before a doorbell is followed by a PREWRITE sync."
+      ],
+      "source_inputs": {"subsystems": ["dma_memory", "tx", "rx"], "feature_families": ["dma_buffer_management"]},
+      "references": ["bus_dma(9)"]
+    },
+    {
+      "item_id": "TGT-TX-001",
+      "workflow_id": "WF-DATAPATH",
+      "title": "isc_txd_encap: descriptor construction from if_pkt_info",
+      "mandatory": true,
+      "replaces_source_mechanism": "ndo_start_xmit and the skb-based TX path",
+      "target_api": ["isc_txd_encap", "if_pkt_info_t", "ipi_segs", "ipi_nsegs", "ipi_pidx", "ipi_new_pidx", "ipi_csum_flags", "ipi_tso_segsz"],
+      "obligations": [
+        "Consume the pre-loaded DMA segment list from if_pkt_info; do not map the mbuf again.",
+        "Translate checksum and TSO requests from the csum flags into the device descriptor fields.",
+        "Return the new producer index; iflib owns ring accounting.",
+        "Reject a packet with more segments than the descriptor format allows rather than truncating it."
+      ],
+      "acceptance_criteria": [
+        "Segment count, offsets and lengths written to descriptors match the supplied segment list exactly.",
+        "Checksum and TSO offload requests map to the same hardware behaviour as the source driver."
+      ],
+      "source_inputs": {"subsystems": ["tx"], "feature_families": ["skb_packet_path"]},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-TX-002",
+      "workflow_id": "WF-DATAPATH",
+      "title": "isc_txd_flush and isc_txd_credits_update",
+      "mandatory": true,
+      "replaces_source_mechanism": "netdev doorbell writes and NAPI-driven TX completion cleaning",
+      "target_api": ["isc_txd_flush", "isc_txd_credits_update"],
+      "obligations": [
+        "Write the tail doorbell only after the descriptor writes are visible to the device.",
+        "Report the number of completed descriptors, honouring the clear flag semantics.",
+        "Handle the completion-queue model of the device rather than assuming in-place descriptor writeback."
+      ],
+      "acceptance_criteria": [
+        "Credits reported never exceed descriptors actually completed by hardware.",
+        "A completion sweep is idempotent when called with the clear flag unset."
+      ],
+      "source_inputs": {"subsystems": ["tx"], "feature_families": ["napi_polling", "mmio_register_access"]},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-RX-001",
+      "workflow_id": "WF-DATAPATH",
+      "title": "isc_rxd_available and isc_rxd_pkt_get",
+      "mandatory": true,
+      "replaces_source_mechanism": "NAPI poll receive loop building skbs",
+      "target_api": ["isc_rxd_available", "isc_rxd_pkt_get", "if_rxd_info_t", "iri_frags", "iri_nfrags", "iri_len", "iri_csum_flags", "iri_flowid", "iri_rsstype"],
+      "obligations": [
+        "Count only descriptors whose done bit is set, bounded by the budget argument.",
+        "Fill if_rxd_info with fragment indices and lengths; iflib assembles the mbuf chain.",
+        "Translate hardware checksum status into csum flags, reporting only what the hardware verified.",
+        "Propagate RSS hash and type so the stack can use hardware flow distribution."
+      ],
+      "acceptance_criteria": [
+        "Multi-fragment frames are reported with correct per-fragment lengths and total length.",
+        "A malformed or errored descriptor is reported as an error rather than delivered upward."
+      ],
+      "source_inputs": {"subsystems": ["rx", "rss"], "feature_families": ["skb_packet_path", "napi_polling"]},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-RX-002",
+      "workflow_id": "WF-DATAPATH",
+      "title": "isc_rxd_refill and isc_rxd_flush",
+      "mandatory": true,
+      "replaces_source_mechanism": "driver-managed page/buffer recycling on the Linux RX path",
+      "target_api": ["isc_rxd_refill", "isc_rxd_flush", "if_rxd_update_t"],
+      "obligations": [
+        "Post the buffer addresses supplied by iflib into the correct buffer queue for the split-queue model.",
+        "Do not allocate receive buffers; iflib owns buffer supply.",
+        "Write the buffer-queue tail doorbell only in the flush method."
+      ],
+      "acceptance_criteria": [
+        "Refill never posts more buffers than iflib supplied, and never reposts an in-flight buffer.",
+        "Buffer-queue and completion-queue indices stay consistent under sustained receive load."
+      ],
+      "source_inputs": {"subsystems": ["rx", "dma_memory"], "feature_families": ["memory_allocation"]},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-INT-001",
+      "workflow_id": "WF-INTR",
+      "title": "ifdi_msix_intr_assign: vector allocation and queue binding",
+      "mandatory": true,
+      "replaces_source_mechanism": "pci_alloc_irq_vectors plus request_irq per queue",
+      "target_api": ["ifdi_msix_intr_assign", "iflib_irq_alloc_generic", "IFLIB_INTR_RX", "IFLIB_INTR_TX", "IFLIB_INTR_ADMIN", "iflib_softirq_alloc_generic"],
+      "obligations": [
+        "Allocate the admin vector separately from queue vectors.",
+        "Bind each RX queue to its own vector and associate TX queues per the device interrupt model.",
+        "Program the device interrupt-vector mapping registers to match the iflib assignment.",
+        "Name every allocated interrupt so it can be identified in vmstat -i."
+      ],
+      "acceptance_criteria": [
+        "The hardware vector map and the iflib assignment agree for every queue.",
+        "Partial allocation failure releases all vectors already allocated."
+      ],
+      "source_inputs": {"subsystems": ["interrupts"], "feature_families": ["interrupt_handling"]},
+      "references": ["iflib(9)", "pci(9)"]
+    },
+    {
+      "item_id": "TGT-INT-002",
+      "workflow_id": "WF-INTR",
+      "title": "Interrupt enable and disable methods",
+      "mandatory": true,
+      "replaces_source_mechanism": "napi_schedule driven masking and per-vector enable/disable writes",
+      "target_api": ["ifdi_intr_enable", "ifdi_intr_disable", "ifdi_tx_queue_intr_enable", "ifdi_rx_queue_intr_enable"],
+      "obligations": [
+        "Implement per-queue enable so iflib can rearm a single vector after processing.",
+        "Make global disable authoritative: after it returns, the device must not raise any interrupt.",
+        "Preserve interrupt-throttling configuration across enable and disable."
+      ],
+      "acceptance_criteria": [
+        "No interrupt is delivered after ifdi_intr_disable returns.",
+        "Rearming one queue does not disturb the state of any other queue."
+      ],
+      "source_inputs": {"subsystems": ["interrupts"], "feature_families": ["interrupt_handling", "napi_polling"]},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-INT-003",
+      "workflow_id": "WF-INTR",
+      "title": "Admin interrupt handling and event dispatch",
+      "mandatory": true,
+      "replaces_source_mechanism": "Linux threaded IRQ or workqueue-based admin event processing",
+      "target_api": ["iflib_admin_intr_deferred", "ifdi_update_admin_status", "FILTER_HANDLED", "FILTER_SCHEDULE_THREAD"],
+      "obligations": [
+        "Keep the filter routine free of sleeping operations and of control-queue message processing.",
+        "Defer mailbox and link-event processing to the admin task.",
+        "Rearm the admin cause only after the deferred handler has consumed the event."
+      ],
+      "acceptance_criteria": [
+        "No control-queue transaction is executed in filter context.",
+        "Admin events are not lost when they arrive while the deferred handler is running."
+      ],
+      "source_inputs": {"subsystems": ["interrupts", "virtchnl_control_plane"], "feature_families": ["interrupt_handling", "deferred_execution"]},
+      "references": ["iflib(9)", "bus_setup_intr(9)"]
+    },
+    {
+      "item_id": "TGT-CTL-001",
+      "workflow_id": "WF-CTRL",
+      "title": "ifdi_init and ifdi_stop",
+      "mandatory": true,
+      "replaces_source_mechanism": "ndo_open and ndo_stop",
+      "target_api": ["ifdi_init", "ifdi_stop"],
+      "obligations": [
+        "Bring the device to a fully configured running state in ifdi_init, including queue enable and filter programming.",
+        "Make ifdi_stop quiesce hardware queues and stop DMA before returning.",
+        "Tolerate being called when already in the requested state.",
+        "Do not sleep waiting for a control-queue response longer than the iflib context lock allows; document the wait strategy."
+      ],
+      "acceptance_criteria": [
+        "ifconfig up/down cycles repeatedly without leaking queue state or losing link.",
+        "After ifdi_stop, hardware performs no further DMA into driver memory."
+      ],
+      "source_inputs": {"subsystems": ["netstack_integration", "configuration", "reset_recovery"], "feature_families": ["network_device_registration"]},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-CTL-002",
+      "workflow_id": "WF-CTRL",
+      "title": "ifdi_update_admin_status and link state propagation",
+      "mandatory": true,
+      "replaces_source_mechanism": "netif_carrier_on/off driven from Linux link event handlers",
+      "target_api": ["ifdi_update_admin_status", "iflib_link_state_change", "LINK_STATE_UP", "LINK_STATE_DOWN"],
+      "obligations": [
+        "Process pending control-queue messages from this callback.",
+        "Report link state and baudrate to iflib rather than manipulating the ifnet directly.",
+        "Keep the callback bounded in time; it runs on the iflib admin task."
+      ],
+      "acceptance_criteria": [
+        "Link transitions observed by hardware appear in ifconfig within one admin poll interval.",
+        "Reported baudrate matches the negotiated link speed."
+      ],
+      "source_inputs": {"subsystems": ["link_media", "virtchnl_control_plane"], "feature_families": ["phy_link_management"]},
+      "references": ["iflib(9)", "if_link_state_change(9)"]
+    },
+    {
+      "item_id": "TGT-CTL-003",
+      "workflow_id": "WF-CTRL",
+      "title": "ifdi_multi_set, ifdi_promisc_set and address filtering",
+      "mandatory": true,
+      "replaces_source_mechanism": "ndo_set_rx_mode and the Linux address list helpers",
+      "target_api": ["ifdi_multi_set", "ifdi_promisc_set", "if_foreach_llmaddr", "IFF_PROMISC", "IFF_ALLMULTI"],
+      "obligations": [
+        "Enumerate multicast addresses with the FreeBSD iterator; the Linux list structures do not exist.",
+        "Fall back to all-multicast when the hardware filter capacity is exceeded, and record that decision.",
+        "Apply promiscuous mode changes through the control plane the device actually requires."
+      ],
+      "acceptance_criteria": [
+        "Joining and leaving multicast groups updates the hardware filter.",
+        "Exceeding filter capacity degrades to all-multicast rather than dropping addresses silently."
+      ],
+      "source_inputs": {"subsystems": ["netstack_integration", "virtchnl_control_plane"], "feature_families": ["network_device_registration"]},
+      "references": ["iflib(9)", "ifnet(9)"]
+    },
+    {
+      "item_id": "TGT-CTL-004",
+      "workflow_id": "WF-CTRL",
+      "title": "ifdi_mtu_set and frame size constraints",
+      "mandatory": true,
+      "replaces_source_mechanism": "ndo_change_mtu",
+      "target_api": ["ifdi_mtu_set", "isc_max_frame_size"],
+      "obligations": [
+        "Validate the requested MTU against the hardware maximum frame size before accepting it.",
+        "Return EINVAL for an unsupported value instead of clamping it.",
+        "Record whether an MTU change requires a queue reinitialisation on this device."
+      ],
+      "acceptance_criteria": [
+        "The accepted MTU range matches the hardware capability reported at attach.",
+        "Traffic continues correctly across an MTU change at the new frame size."
+      ],
+      "source_inputs": {"subsystems": ["netstack_integration", "configuration"], "feature_families": []},
+      "references": ["iflib(9)"]
+    },
+    {
+      "item_id": "TGT-CTL-005",
+      "workflow_id": "WF-CTRL",
+      "title": "VLAN registration callbacks",
+      "mandatory": true,
+      "replaces_source_mechanism": "ndo_vlan_rx_add_vid and ndo_vlan_rx_kill_vid",
+      "target_api": ["ifdi_vlan_register", "ifdi_vlan_unregister", "IFCAP_VLAN_HWTAGGING", "IFCAP_VLAN_HWFILTER"],
+      "obligations": [
+        "Maintain the VLAN filter set across interface down/up cycles.",
+        "Claim IFCAP_VLAN_HWFILTER only when the hardware filter is actually programmed.",
+        "Handle VLAN tag insertion and stripping consistently with the claimed capabilities."
+      ],
+      "acceptance_criteria": [
+        "Configured VLANs survive an ifconfig down/up cycle.",
+        "Tagged traffic is filtered exactly as the claimed capability set implies."
+      ],
+      "source_inputs": {"subsystems": ["netstack_integration", "virtchnl_control_plane"], "feature_families": []},
+      "references": ["iflib(9)", "vlan(4)"]
+    },
+    {
+      "item_id": "TGT-MEDIA-001",
+      "workflow_id": "WF-MEDIA",
+      "title": "ifmedia integration: ifdi_media_status and ifdi_media_change",
+      "mandatory": true,
+      "replaces_source_mechanism": "ethtool link settings and Linux PHY/link ops",
+      "target_api": ["ifdi_media_status", "ifdi_media_change", "ifmedia_add", "ifmedia_set", "IFM_ETHER", "IFM_AUTO", "IFM_FDX"],
+      "obligations": [
+        "Map every link speed the device reports onto an IFM_* media type.",
+        "Report IFM_AVALID and IFM_ACTIVE truthfully based on the current link state.",
+        "Reject unsupported forced-media requests rather than accepting them silently."
+      ],
+      "acceptance_criteria": [
+        "ifconfig media reports the actual negotiated speed and duplex.",
+        "Every speed advertised by the device has a distinct media entry."
+      ],
+      "source_inputs": {"subsystems": ["link_media"], "feature_families": ["phy_link_management"]},
+      "references": ["ifmedia(9)", "iflib(9)"]
+    },
+    {
+      "item_id": "TGT-OFFLOAD-001",
+      "workflow_id": "WF-MEDIA",
+      "title": "Capability advertisement and offload negotiation",
+      "mandatory": true,
+      "replaces_source_mechanism": "netdev features/hw_features and ethtool offload control",
+      "target_api": ["if_setcapabilities", "if_setcapenable", "IFCAP_TXCSUM", "IFCAP_RXCSUM", "IFCAP_TSO4", "IFCAP_TSO6", "IFCAP_LRO", "IFCAP_JUMBO_MTU", "if_sethwassist"],
+      "obligations": [
+        "Claim only offloads that the datapath methods actually implement.",
+        "Keep the hwassist mask consistent with the enabled capability set at all times.",
+        "Handle SIOCSIFCAP transitions, including disabling an offload while traffic is running.",
+        "Record for each Linux feature flag whether it maps to a capability, is handled by iflib, or is dropped."
+      ],
+      "acceptance_criteria": [
+        "Every claimed capability has a corresponding descriptor-level implementation in the datapath items.",
+        "Toggling each capability with ifconfig produces the expected change in offload behaviour."
+      ],
+      "source_inputs": {"subsystems": ["netstack_integration", "tx", "rx"], "feature_families": ["skb_packet_path"]},
+      "references": ["ifnet(9)", "iflib(9)"]
+    },
+    {
+      "item_id": "TGT-VC-001",
+      "workflow_id": "WF-VIRTCHNL",
+      "title": "Control-queue transport on FreeBSD",
+      "mandatory": true,
+      "replaces_source_mechanism": "Linux DMA plus completion/wait-queue based mailbox transport",
+      "target_api": ["bus_dma(9)", "callout(9)", "mtx(9)", "sx(9)"],
+      "obligations": [
+        "Allocate mailbox descriptor rings and message buffers through busdma with explicit sync points.",
+        "Define the wait strategy for a response: which lock is held, whether the caller may sleep, and the timeout.",
+        "Serialize concurrent senders without holding a spin lock across a device round trip.",
+        "Preserve the message sequencing and retry semantics of the source transport."
+      ],
+      "acceptance_criteria": [
+        "A control message issued from the admin task and one from an ioctl path cannot interleave incorrectly.",
+        "A lost or timed-out response is reported as an error and does not wedge the transport."
+      ],
+      "source_inputs": {"subsystems": ["control_queue", "virtchnl_control_plane", "dma_memory"], "feature_families": ["dma_buffer_management", "synchronization_locking"]},
+      "references": ["bus_dma(9)", "callout(9)", "sx(9)"]
+    },
+    {
+      "item_id": "TGT-VC-002",
+      "workflow_id": "WF-VIRTCHNL",
+      "title": "Asynchronous virtchnl event processing",
+      "mandatory": true,
+      "replaces_source_mechanism": "workqueue and delayed_work driven virtchnl event handling",
+      "target_api": ["taskqueue(9)", "iflib_admin_intr_deferred", "callout_reset", "callout_drain"],
+      "obligations": [
+        "Run event processing on a context that may sleep, never in filter context.",
+        "Drain and stop every task and callout before the structures they touch are freed.",
+        "Keep the ordering guarantees the source driver relied on between events and requests."
+      ],
+      "acceptance_criteria": [
+        "Detach during an in-flight event completes without use-after-free.",
+        "Event ordering matches the source driver for reset, link and configuration events."
+      ],
+      "source_inputs": {"subsystems": ["virtchnl_control_plane", "reset_recovery"], "feature_families": ["deferred_execution", "timers_and_polling"]},
+      "references": ["taskqueue(9)", "callout(9)"]
+    },
+    {
+      "item_id": "TGT-SYNC-001",
+      "workflow_id": "WF-SYNC",
+      "title": "Locking model on the target",
+      "mandatory": true,
+      "replaces_source_mechanism": "spinlock_t, mutex, rtnl_lock and RCU",
+      "target_api": ["mtx(9)", "sx(9)", "rmlock(9)", "iflib CTX lock", "epoch(9)"],
+      "obligations": [
+        "State which iflib-owned lock already covers each datapath and control path, and add a driver lock only where iflib does not.",
+        "Map each source lock to a target primitive, or justify its removal.",
+        "Declare the lock order and prove it is acyclic.",
+        "Replace RCU-protected pointer publication with an explicit target mechanism; do not assume an RCU equivalent."
+      ],
+      "acceptance_criteria": [
+        "No sleepable lock is acquired in a context that cannot sleep.",
+        "The declared lock order holds on every path, including error paths."
+      ],
+      "source_inputs": {"subsystems": ["configuration", "tx", "rx", "virtchnl_control_plane"], "feature_families": ["synchronization_locking", "rcu_atomics_refcounting"]},
+      "references": ["mtx(9)", "sx(9)", "epoch(9)", "locking(9)"]
+    },
+    {
+      "item_id": "TGT-SYNC-002",
+      "workflow_id": "WF-SYNC",
+      "title": "Timers and deferred execution",
+      "mandatory": true,
+      "replaces_source_mechanism": "timer_list, delayed_work and workqueues",
+      "target_api": ["callout(9)", "taskqueue(9)", "ifdi_timer", "iflib_admin_intr_deferred"],
+      "obligations": [
+        "Use ifdi_timer for per-queue watchdog work instead of a private periodic timer where iflib already provides one.",
+        "Every callout must be initialised with a lock and drained before teardown.",
+        "Distinguish work that must not be lost from work that may be coalesced, and pick the primitive accordingly."
+      ],
+      "acceptance_criteria": [
+        "No callout or task can run after the structures it references are freed.",
+        "Periodic work continues across interface down/up cycles as the source driver did."
+      ],
+      "source_inputs": {"subsystems": ["reset_recovery", "stats"], "feature_families": ["timers_and_polling", "deferred_execution"]},
+      "references": ["callout(9)", "taskqueue(9)", "iflib(9)"]
+    },
+    {
+      "item_id": "TGT-STATS-001",
+      "workflow_id": "WF-OBS",
+      "title": "Counter reporting through ifdi_get_counter",
+      "mandatory": true,
+      "replaces_source_mechanism": "ndo_get_stats64 and ethtool statistics",
+      "target_api": ["ifdi_get_counter", "IFCOUNTER_IPACKETS", "IFCOUNTER_OPACKETS", "IFCOUNTER_IERRORS", "IFCOUNTER_OERRORS", "counter(9)"],
+      "obligations": [
+        "Map each standard interface counter to the hardware or software source that backs it.",
+        "Let iflib report the counters it already maintains; do not double count.",
+        "Expose device-specific counters through the sysctl tree rather than inventing interface counters."
+      ],
+      "acceptance_criteria": [
+        "netstat -i counters advance correctly under traffic.",
+        "No counter is reported from two sources at once."
+      ],
+      "source_inputs": {"subsystems": ["stats"], "feature_families": ["linux_logging_diagnostics"]},
+      "references": ["ifnet(9)", "counter(9)", "iflib(9)"]
+    },
+    {
+      "item_id": "TGT-SYSCTL-001",
+      "workflow_id": "WF-OBS",
+      "title": "sysctl tree for device state and statistics",
+      "mandatory": true,
+      "replaces_source_mechanism": "sysfs, debugfs, devlink and ethtool -S",
+      "target_api": ["SYSCTL_ADD_NODE", "SYSCTL_ADD_PROC", "SYSCTL_ADD_U64", "device_get_sysctl_ctx", "device_get_sysctl_tree"],
+      "obligations": [
+        "Anchor the tree under the device node so it is removed automatically at detach.",
+        "Expose per-queue statistics under a per-queue subtree.",
+        "Never expose a raw kernel pointer or allow an unprivileged write to change device state."
+      ],
+      "acceptance_criteria": [
+        "The sysctl subtree disappears completely after detach.",
+        "Every statistic previously reachable through ethtool -S has a sysctl equivalent or a recorded decision to drop it."
+      ],
+      "source_inputs": {"subsystems": ["stats", "configuration"], "feature_families": ["sysfs_procfs_debugfs", "linux_logging_diagnostics"]},
+      "references": ["sysctl(9)", "sysctl_add_oid(9)"]
+    },
+    {
+      "item_id": "TGT-SYSCTL-002",
+      "workflow_id": "WF-OBS",
+      "title": "Loader tunables and driver configuration",
+      "mandatory": true,
+      "replaces_source_mechanism": "Linux module parameters and devlink parameters",
+      "target_api": ["TUNABLE_INT", "kern.ipc / hw.<driver>.* tunables", "CTLFLAG_RDTUN"],
+      "obligations": [
+        "Express every source module parameter as a loader tunable or a sysctl, or record that it is dropped.",
+        "Mark boot-time-only values read-only after attach.",
+        "Validate tunable values at attach and fall back to a documented default on an invalid value."
+      ],
+      "acceptance_criteria": [
+        "Each source module parameter is accounted for: mapped, replaced or explicitly dropped.",
+        "An out-of-range tunable produces a warning and a safe default rather than an attach failure."
+      ],
+      "source_inputs": {"subsystems": ["configuration"], "feature_families": ["module_lifecycle", "userspace_config"]},
+      "references": ["sysctl(9)", "loader.conf(5)"]
+    },
+    {
+      "item_id": "TGT-BLD-001",
+      "workflow_id": "WF-BUILD",
+      "title": "Kernel module build definition",
+      "mandatory": true,
+      "replaces_source_mechanism": "Kbuild Makefile and Kconfig",
+      "target_api": ["bsd.kmod.mk", "KMOD", "SRCS", "SYSDIR"],
+      "obligations": [
+        "Produce a bsd.kmod.mk-based Makefile listing only the sources that survive the exclusion pass.",
+        "Declare the generated glue sources that FreeBSD requires but Linux does not.",
+        "Keep the build free of Linux compatibility headers."
+      ],
+      "acceptance_criteria": [
+        "The module builds against a matching /usr/src with no Linux compatibility shim in the include path.",
+        "The source list matches the retained-method inventory of this baseline."
+      ],
+      "source_inputs": {"subsystems": [], "feature_families": []},
+      "references": ["bsd.kmod.mk", "build(7)"]
+    },
+    {
+      "item_id": "TGT-BLD-002",
+      "workflow_id": "WF-BUILD",
+      "title": "Target validation plan",
+      "mandatory": true,
+      "replaces_source_mechanism": "Linux selftests and driver-specific CI",
+      "target_api": ["kldload", "kldunload", "ifconfig", "netstat", "vmstat -i"],
+      "obligations": [
+        "Define a load/unload cycle test that runs before any hardware attach is attempted.",
+        "Define unit-level tests for the descriptor construction and completion paths that run in userspace.",
+        "Define a hardware bring-up sequence with an explicit abort condition at each step.",
+        "State the console or out-of-band access required before the first attach on real hardware."
+      ],
+      "acceptance_criteria": [
+        "Every mandatory work item in this profile has at least one test that exercises it.",
+        "The plan states what to do when a step fails, not only what to run."
+      ],
+      "source_inputs": {"subsystems": [], "feature_families": []},
+      "references": ["kldload(8)", "iflib(9)"]
+    }
+  ]
+}
