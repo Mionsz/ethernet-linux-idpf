@@ -4,9 +4,35 @@
 #ifndef _IDPF_CONTROLQ_API_H_
 #define _IDPF_CONTROLQ_API_H_
 
+/*
+ * Control queue API shared between the LAN driver and the common control
+ * queue implementation.
+ *
+ * FreeBSD port notes
+ * ------------------
+ *   struct list_head       -> TAILQ_ENTRY / TAILQ_HEAD
+ *   spinlock_t             -> struct mtx (MTX_DEF, taken from process and
+ *                             taskqueue context only)
+ *   void __iomem *         -> void * (offset into the single BAR0 mapping;
+ *                             reach it through the accessors in idpf_mem.h)
+ *   resource_size_t        -> bus_size_t
+ *   u8/u16/u32/u64         -> u8/u16/u32/u64
+ * [FBSD15:A30-A32]
+ */
+
+#include <sys/param.h>
+#include <sys/queue.h>
+#include <sys/lock.h>
+#include <sys/mutex.h>
+
+#include <machine/bus.h>
+
 #include "idpf_mem.h"
 
 struct idpf_hw;
+struct idpf_ctlq_info;
+
+TAILQ_HEAD(idpf_ctlq_head, idpf_ctlq_info);
 
 /* Used for queue init, response and events */
 enum idpf_ctlq_type {
@@ -95,13 +121,12 @@ struct idpf_ctlq_create_info {
 
 /* Control Queue information */
 struct idpf_ctlq_info {
-	struct list_head cq_list;
+	TAILQ_ENTRY(idpf_ctlq_info) cq_list;
 
 	enum idpf_ctlq_type cq_type;
 	int q_id;
-	spinlock_t cq_lock;		/* queue lock
-					 * idpf_lock is defined in OSdep.h
-					 */
+	struct mtx cq_lock;		/* queue lock */
+
 	/* used for interrupt processing */
 	u16 next_to_use;
 	u16 next_to_clean;
@@ -109,16 +134,15 @@ struct idpf_ctlq_info {
 					 * to after recev
 					 */
 
-	struct idpf_dma_mem desc_ring;	/* descriptor ring memory
-					 * idpf_dma_mem is defined in OSdep.h
-					 */
+	struct idpf_dma_mem desc_ring;	/* descriptor ring memory */
+
 	union {
 		struct idpf_dma_mem **rx_buff;
 		struct idpf_ctlq_msg **tx_msg;
 	} bi;
 
-	u16 buf_size;			/* queue buffer size */
-	u16 ring_size;			/* Number of descriptors */
+	u16 buf_size;		/* queue buffer size */
+	u16 ring_size;		/* Number of descriptors */
 	struct idpf_ctlq_reg reg;	/* registers accessed by ctlqs */
 };
 
@@ -155,9 +179,9 @@ enum idpf_mbx_opc {
 #define IDPF_MMIO_MAP_FALLBACK_MAX_REMAINING		3
 
 struct idpf_mmio_reg {
-	void __iomem *vaddr;
-	resource_size_t addr_start;
-	resource_size_t addr_len;
+	void		*vaddr;
+	bus_size_t	 addr_start;
+	bus_size_t	 addr_len;
 };
 
 /* Define the APF hardware struct to replace other control structs as needed
@@ -187,7 +211,7 @@ struct idpf_hw {
 	u8 revision_id;
 	bool adapter_stopped;
 
-	struct list_head cq_list_head;
+	struct idpf_ctlq_head cq_list_head;
 };
 
 /* API supported for control queue management */
@@ -222,7 +246,7 @@ int idpf_ctlq_recv(struct idpf_ctlq_info *cq, u16 *num_q_msg,
 
 /* Reclaims all descriptors on HW write back */
 int idpf_ctlq_clean_sq_force(struct idpf_ctlq_info *cq, u16 *clean_count,
-		             struct idpf_ctlq_msg *msg_status[]);
+			     struct idpf_ctlq_msg *msg_status[]);
 
 /* Reclaims send descriptors on HW write back */
 int idpf_ctlq_clean_sq(struct idpf_ctlq_info *cq, u16 *clean_count,

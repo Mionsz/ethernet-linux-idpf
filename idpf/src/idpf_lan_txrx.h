@@ -4,6 +4,28 @@
 #ifndef _IDPF_LAN_TXRX_H_
 #define _IDPF_LAN_TXRX_H_
 
+#include <sys/types.h>
+
+/*
+ * FreeBSD has no BIT()/GENMASK(); define them locally so the register
+ * definitions below stay byte-identical to the common driver.  Guarded in
+ * case another header in the same translation unit already supplied them.
+ */
+#ifndef BIT
+#define BIT(n)			((u32)1U << (n))
+#endif
+#ifndef BIT_ULL
+#define BIT_ULL(n)		((u64)1ULL << (n))
+#endif
+#ifndef GENMASK
+#define GENMASK(h, l)		\
+	((u32)((~0U >> (31 - (h))) & (~0U << (l))))
+#endif
+#ifndef GENMASK_ULL
+#define GENMASK_ULL(h, l)	\
+	((u64)((~0ULL >> (63 - (h))) & (~0ULL << (l))))
+#endif
+
 enum idpf_rss_hash {
 	IDPF_HASH_INVALID			= 0,
 	/* Values 1 - 28 are reserved for future use */
@@ -186,16 +208,16 @@ enum idpf_tx_base_desc_cmd_bits {
 /* Transmit descriptors  */
 /* splitq tx buf, singleq tx buf and singleq compl desc */
 struct idpf_base_tx_desc {
-	__le64 buf_addr; /* Address of descriptor's data buf */
-	__le64 qw1; /* type_cmd_offset_bsz_l2tag1 */
+	u64 buf_addr; /* Address of descriptor's data buf */
+	u64 qw1; /* type_cmd_offset_bsz_l2tag1 */
 };/* read used with buffer queues */
 
 struct idpf_splitq_tx_compl_desc {
 	/* qid=[10:0] comptype=[13:11] rsvd=[14] gen=[15] */
-	__le16 qid_comptype_gen;
+	u16 qid_comptype_gen;
 	union {
-		__le16 q_head; /* Queue head */
-		__le16 compl_tag; /* Completion tag */
+		u16 q_head; /* Queue head */
+		u16 compl_tag; /* Completion tag */
 	} q_head_compl_tag;
 	u8 ts[3];
 	u8 rsvd; /* Reserved */
@@ -204,11 +226,11 @@ struct idpf_splitq_tx_compl_desc {
 /* Context descriptors */
 struct idpf_base_tx_ctx_desc {
 	struct {
-		__le32 tunneling_params;
-		__le16 l2tag2;
-		__le16 rsvd1;
+		u32 tunneling_params;
+		u16 l2tag2;
+		u16 rsvd1;
 	} qw0;
-	__le64 qw1; /* type_cmd_tlen_mss/rt_hint */
+	u64 qw1; /* type_cmd_tlen_mss/rt_hint */
 };
 
 /* Common cmd field defines for all desc except Flex Flow Scheduler (0x0C) */
@@ -224,36 +246,36 @@ enum idpf_tx_flex_desc_cmd_bits {
 };
 
 struct idpf_flex_tx_desc {
-	__le64 buf_addr;	/* Packet buffer address */
+	u64 buf_addr;	/* Packet buffer address */
 	struct {
 #define IDPF_FLEX_TXD_QW1_DTYPE_S	0
 #define IDPF_FLEX_TXD_QW1_DTYPE_M	GENMASK(4, 0)
 #define IDPF_FLEX_TXD_QW1_CMD_S		5
 #define IDPF_FLEX_TXD_QW1_CMD_M		GENMASK(15, 5)
-		__le16 cmd_dtype;
+		u16 cmd_dtype;
 		union {
 			/* DTYPE = IDPF_TX_DESC_DTYPE_FLEX_DATA_(0x03) */
 			u8 raw[4];
 
 			/* DTYPE = IDPF_TX_DESC_DTYPE_FLEX_TSYN_L2TAG1 (0x06) */
 			struct {
-				__le16 l2tag1;
+				u16 l2tag1;
 				u8 flex;
 				u8 tsync;
 			} tsync;
 
 			/* DTYPE=IDPF_TX_DESC_DTYPE_FLEX_L2TAG1_L2TAG2 (0x07) */
 			struct {
-				__le16 l2tag1;
-				__le16 l2tag2;
+				u16 l2tag1;
+				u16 l2tag2;
 			} l2tags;
 		};
-		__le16 buf_size;
+		u16 buf_size;
 	} qw1;
 };
 
 struct idpf_flex_tx_sched_desc {
-	__le64 buf_addr;	/* Packet buffer address */
+	u64 buf_addr;	/* Packet buffer address */
 
 	/* DTYPE = IDPF_TX_DESC_DTYPE_FLEX_FLOW_SCHE_16B (0x0C) */
 	struct {
@@ -267,8 +289,8 @@ struct idpf_flex_tx_sched_desc {
 		u8 ts[3];
 #define IDPF_TXD_FLOW_SCH_HORIZON_OVERFLOW_M	0x80
 
-		__le16 compl_tag;
-		__le16 rxr_bufsize;
+		u16 compl_tag;
+		u16 rxr_bufsize;
 #define IDPF_TXD_FLEX_FLOW_RXR		0x4000
 #define IDPF_TXD_FLEX_FLOW_BUFSIZE_M	0x3FFF
 	} qw1;
@@ -290,10 +312,10 @@ enum idpf_tx_flex_ctx_desc_cmd_bits {
 
 /* Standard flex descriptor TSO context quad word */
 struct idpf_flex_tx_tso_ctx_qw {
-	__le32 flex_tlen;
+	u32 flex_tlen;
 #define IDPF_TXD_FLEX_CTX_TLEN_M	0x3FFFF
 #define IDPF_TXD_FLEX_TSO_CTX_FLEX_S	24
-	__le16 mss_rt;
+	u16 mss_rt;
 #define IDPF_TXD_FLEX_CTX_MSS_RT_M	0x3FFF
 	u8 hdr_len;
 	u8 flex;
@@ -304,31 +326,31 @@ union idpf_flex_tx_ctx_desc {
 	struct  {
 		struct {
 			u8 rsv[4];
-			__le16 l2tag2;
+			u16 l2tag2;
 			u8 rsv_2[2];
 		} qw0;
 		struct {
-			__le16 cmd_dtype;
-			__le16 tsyn_reg_l;
+			u16 cmd_dtype;
+			u16 tsyn_reg_l;
 #define IDPF_TX_DESC_CTX_TSYN_L_M	GENMASK(15, 14)
-			__le16 tsyn_reg_h;
+			u16 tsyn_reg_h;
 #define IDPF_TX_DESC_CTX_TSYN_H_M	GENMASK(15, 0)
-			__le16 mss;
+			u16 mss;
 #define IDPF_TX_DESC_CTX_MSS_M		GENMASK(14, 2)
 		} qw1;
 	} tsyn;
 
 	/* DTYPE = IDPF_TX_DESC_DTYPE_FLEX_L2TAG1_CTX (0x04) */
 	struct {
-		__le64 qw0;
-		__le64 qw1;
+		u64 qw0;
+		u64 qw1;
 	};
 
 	/* DTYPE = IDPF_TX_DESC_DTYPE_FLEX_TSO_CTX (0x05) */
 	struct {
 		struct idpf_flex_tx_tso_ctx_qw qw0;
 		struct {
-			__le16 cmd_dtype;
+			u16 cmd_dtype;
 			u8 flex[6];
 		} qw1;
 	} tso;
@@ -337,8 +359,8 @@ union idpf_flex_tx_ctx_desc {
 	struct {
 		struct idpf_flex_tx_tso_ctx_qw qw0;
 		struct {
-			__le16 cmd_dtype;
-			__le16 l2tag2;
+			u16 cmd_dtype;
+			u16 l2tag2;
 			u8 flex0;
 			u8 ptag;
 			u8 flex1[2];
@@ -349,8 +371,8 @@ union idpf_flex_tx_ctx_desc {
 	struct {
 		u8 qw0_flex[8];
 		struct {
-			__le16 cmd_dtype;
-			__le16 l2tag2;
+			u16 cmd_dtype;
+			u16 l2tag2;
 			u8 flex[4];
 		} qw1;
 	} l2tag2;
@@ -358,18 +380,18 @@ union idpf_flex_tx_ctx_desc {
 	/* DTYPE = IDPF_TX_DESC_DTYPE_REINJECT_CTX (0x02) */
 	struct {
 		struct {
-			__le32 sa_domain;
+			u32 sa_domain;
 #define IDPF_TXD_FLEX_CTX_SA_DOM_M	0xFFFF
 #define IDPF_TXD_FLEX_CTX_SA_DOM_VAL	0x10000
-			__le32 sa_idx;
+			u32 sa_idx;
 #define IDPF_TXD_FLEX_CTX_SAIDX_M	0x1FFFFF
 		} qw0;
 		struct {
-			__le16 cmd_dtype;
-			__le16 txr2comp;
+			u16 cmd_dtype;
+			u16 txr2comp;
 #define IDPF_TXD_FLEX_CTX_TXR2COMP	0x1
-			__le16 miss_txq_comp_tag;
-			__le16 miss_txq_id;
+			u16 miss_txq_comp_tag;
+			u16 miss_txq_id;
 		} qw1;
 	} reinjection_pkt;
 };
