@@ -123,12 +123,14 @@ import hashlib
 import json
 import os
 import re
+import select
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -268,25 +270,152 @@ def deep_merge(base: dict[str, Any], overlay: Mapping[str, Any]) -> dict[str, An
     return out
 
 
+LOCK_DEFAULTS: dict[str, Any] = {
+    "wait_timeout_seconds": 3600,
+    "on_timeout": "override",
+    "poll_interval_seconds": 5,
+    "announce_interval_seconds": 60,
+    "interactive_override": True,
+}
+LOCK_ON_TIMEOUT = ("override", "exit")
+
+
+def lock_settings(overrides: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    cfg = dict(LOCK_DEFAULTS)
+    configured = DEFAULT_POLICY.get("workspace_lock") or {}
+    cfg.update({k: v for k, v in configured.items() if k in LOCK_DEFAULTS})
+    cfg.update({k: v for k, v in (overrides or {}).items() if v is not None})
+    if str(cfg["on_timeout"]) not in LOCK_ON_TIMEOUT:
+        raise ManifestError(f"workspace_lock.on_timeout must be one of {LOCK_ON_TIMEOUT}, got {cfg['on_timeout']!r}")
+    return cfg
+
+
+def format_duration(seconds: float) -> str:
+    seconds = int(max(0, seconds))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, rem = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m{rem:02d}s" if rem else f"{minutes} minutes"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h{minutes:02d}m"
+
+
+def lock_holders(path: Path) -> list[dict[str, str]]:
+    """Best-effort identification of the processes holding the lock file open."""
+    target = str(path)
+    found: list[dict[str, str]] = []
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return found
+    for entry in proc.iterdir():
+        if not entry.name.isdigit() or entry.name == str(os.getpid()):
+            continue
+        fd_dir = entry / "fd"
+        try:
+            handles = list(fd_dir.iterdir())
+        except OSError:
+            continue
+        for fd in handles:
+            try:
+                if os.readlink(fd) != target:
+                    continue
+                cmdline = (entry / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+            except OSError:
+                continue
+            found.append({"pid": entry.name, "cmdline": cmdline[:200] or "(unknown)"})
+            break
+    return found
+
+
+def _terminal_override_requested(timeout: float) -> bool:
+    """Wait up to timeout for the operator to type 'yes' on a terminal."""
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], max(0.0, timeout))
+    except (OSError, ValueError):
+        time.sleep(max(0.0, timeout))
+        return False
+    if not ready:
+        return False
+    line = sys.stdin.readline()
+    return line.strip().lower() in ("yes", "y")
+
+
+def _acquire_lock(fh: Any, path: Path, fcntl: Any, cfg: dict[str, Any]) -> bool:
+    """Acquire the advisory lock. Returns False when execution proceeds without it."""
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        pass
+
+    timeout = float(cfg["wait_timeout_seconds"])
+    poll = max(0.5, float(cfg["poll_interval_seconds"]))
+    announce = max(5.0, float(cfg["announce_interval_seconds"]))
+    interactive = bool(cfg["interactive_override"]) and sys.stdin is not None and sys.stdin.isatty()
+    hint = " [To override the lock, type 'yes' and press enter]" if interactive else ""
+
+    print(f"Workspace is locked by another process: {path}", file=sys.stderr)
+    for holder in lock_holders(path):
+        print(f"  holder PID {holder['pid']}: {holder['cmdline']}", file=sys.stderr)
+    print(f"Waiting {format_duration(timeout)} for workspace lock release...{hint}", file=sys.stderr)
+    print(f"On timeout the configured action is '{cfg['on_timeout']}' (workspace_lock.on_timeout).", file=sys.stderr)
+
+    start = last_announce = time.monotonic()
+    while True:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            print(f"Workspace lock acquired after {format_duration(time.monotonic() - start)}.", file=sys.stderr)
+            return True
+        except OSError:
+            pass
+        remaining = timeout - (time.monotonic() - start)
+        if remaining <= 0:
+            break
+        wait = min(poll, remaining)
+        if interactive:
+            if _terminal_override_requested(wait):
+                print("Lock override requested from the terminal; continuing WITHOUT the workspace lock.", file=sys.stderr)
+                return False
+        else:
+            time.sleep(wait)
+        if time.monotonic() - last_announce >= announce:
+            last_announce = time.monotonic()
+            elapsed = time.monotonic() - start
+            print(f"Still waiting for workspace lock: {format_duration(elapsed)} elapsed, "
+                  f"{format_duration(timeout - elapsed)} remaining.{hint}", file=sys.stderr)
+
+    if str(cfg["on_timeout"]) == "exit":
+        raise SystemExit(
+            f"ERROR: workspace lock was not released within {format_duration(timeout)}; exiting because "
+            f"workspace_lock.on_timeout is 'exit'. Another process is still using {path.parent}.")
+    print(f"WARNING: workspace lock was not released within {format_duration(timeout)}; overriding it and "
+          f"continuing WITHOUT the lock. Concurrent writers can corrupt {path.parent}.", file=sys.stderr)
+    return False
+
+
 @contextlib.contextmanager
-def workspace_lock(root: Path) -> Iterator[None]:
+def workspace_lock(root: Path, settings: Mapping[str, Any] | None = None) -> Iterator[None]:
     """Advisory process lock.  On non-POSIX systems it degrades gracefully."""
     p = root / "orchestration" / ".lock"
     p.parent.mkdir(parents=True, exist_ok=True)
     fh = p.open("a+", encoding="utf-8")
+    held = False
     try:
         try:
             import fcntl  # POSIX only
-            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        except (ImportError, OSError):
-            pass
+        except ImportError:
+            fcntl = None
+        if fcntl is not None:
+            held = _acquire_lock(fh, p, fcntl, lock_settings(settings))
         yield
     finally:
-        try:
-            import fcntl
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
-        except (ImportError, OSError):
-            pass
+        if held:
+            try:
+                import fcntl
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except (ImportError, OSError):
+                pass
         fh.close()
 
 
@@ -534,8 +663,39 @@ def prompt_by_stem(directory: Path) -> dict[str, Path]:
     return {p.stem: p for p in sorted(directory.glob("*.md")) if p.is_file()}
 
 
+# dependency_fingerprint() runs per work item, and each call re-derives the whole
+# item inventory, the specification fingerprint and the evidence aggregate. With
+# hundreds of methods that is quadratic file parsing. These inputs are immutable
+# for the lifetime of one command, except after a result or specification write,
+# which calls invalidate_derived_caches().
+_DERIVED_CACHE: dict[tuple[str, str], Any] = {}
+
+
+def invalidate_derived_caches() -> None:
+    _DERIVED_CACHE.clear()
+
+
+def _memo(kind: str, root: Path, producer: Any) -> Any:
+    key = (kind, str(root))
+    if key not in _DERIVED_CACHE:
+        _DERIVED_CACHE[key] = producer()
+    return _DERIVED_CACHE[key]
+
+
 def target_scope(root: Path) -> dict[str, Any]:
     return load_json(root / "orchestration" / "target" / "exclusions.json", {}) or {}
+
+
+def target_scope_fingerprint(root: Path) -> str:
+    """Hash the decision set that removed source methods from the porting loop."""
+    scope = target_scope(root)
+    return sha256_bytes(canonical_json({
+        "target_profile_id": scope.get("target_profile_id"),
+        "target_os": scope.get("target_os"),
+        "driver_framework": scope.get("driver_framework"),
+        "excluded": sorted((scope.get("excluded") or {}).keys()),
+        "by_rule": scope.get("by_rule") or {},
+    }))
 
 
 def excluded_method_ids(root: Path) -> set[str]:
@@ -657,14 +817,14 @@ def final_item(root: Path) -> WorkItem:
 
 
 def all_static_items(root: Path) -> dict[str, list[WorkItem]]:
-    return {
+    return dict(_memo("static_items", root, lambda: {
         "architecture": [architecture_item(root)],
         "target": target_items(root),
         "methods": method_items(root),
         "files": file_items(root),
         "subsystems": subsystem_items(root),
         "final": [final_item(root)],
-    }
+    }))
 
 
 def build_inventory(root: Path, baseline: dict[str, Any]) -> dict[str, Any]:
@@ -853,6 +1013,10 @@ def _hash_jsonl_projection(path: Path, keys: Sequence[str] | None = None) -> str
 
 
 def architecture_surface_fingerprint(root: Path) -> str:
+    return _memo("architecture_surface", root, lambda: _architecture_surface_fingerprint_uncached(root))
+
+
+def _architecture_surface_fingerprint_uncached(root: Path) -> str:
     """Fingerprint the architecture surface while ignoring path/line-only churn.
 
     This deliberately excludes commit IDs, absolute build paths and preprocessor
@@ -908,6 +1072,10 @@ def architecture_surface_fingerprint(root: Path) -> str:
 
 
 def spec_fingerprint(root: Path) -> str:
+    return _memo("spec_fingerprint", root, lambda: _spec_fingerprint_uncached(root))
+
+
+def _spec_fingerprint_uncached(root: Path) -> str:
     d = root / "orchestration" / "specifications"
     clauses = d / "clauses.jsonl"
     payload = {
@@ -1059,6 +1227,18 @@ def dependency_fingerprint(
         deps["subsystems"] = {x.item_id: _analysis_artifact_fingerprint(root, "subsystems", x, baseline, static, evidence_rows) for x in static.get("subsystems", [])}
         deps["evidence_inventory"] = evidence_rows
         deps["evidence"] = {row["evidence_id"]: _analysis_artifact_fingerprint(root, "evidence", WorkItem(stage="evidence", item_id=row["evidence_id"], identity=row["evidence_id"], metadata=row), baseline, static, evidence_rows) for row in evidence_rows}
+    elif stage == "target":
+        # Target work items depend on the architecture result and on the target
+        # scope that decided which source methods they supersede.
+        deps["architecture"] = _analysis_artifact_fingerprint(root, "architecture", static["architecture"][0], baseline, static, evidence_rows)
+        deps["target_scope"] = target_scope_fingerprint(root)
+        deps["target_item_surface"] = {
+            "workflow_id": item.metadata.get("workflow_id"),
+            "mandatory": item.metadata.get("mandatory"),
+            "obligation_count": item.metadata.get("obligation_count"),
+            "superseded_source_method_count": item.metadata.get("superseded_source_method_count"),
+            "context_sha256": sha256_file(Path(item.source_context)) if item.source_context and Path(item.source_context).is_file() else None,
+        }
     else:
         raise ValueError(stage)
     return sha256_bytes(canonical_json(deps))
@@ -1159,6 +1339,7 @@ def ingest_result(root: Path, stage: str, item: WorkItem, raw_path: Path, baseli
     if not pp.exists():
         return ValidationResult(False, [f"Enriched prompt does not exist: {pp}. Run render first."])
     atomic_write_json(result_path(root, stage, item.item_id), obj)
+    invalidate_derived_caches()
     prompt_meta = load_json(pp.with_suffix(".meta.json"), {}) or {}
     atomic_write_json(result_meta_path(root, stage, item.item_id), {
         "schema_version": SCHEMA_VERSION,
@@ -1187,6 +1368,10 @@ def evidence_id_for(*parts: str) -> str:
 
 
 def aggregate_evidence(root: Path, static_items: dict[str, list[WorkItem]], policy: dict[str, Any]) -> list[dict[str, Any]]:
+    return _memo("evidence_rows", root, lambda: _aggregate_evidence_uncached(root, static_items, policy))
+
+
+def _aggregate_evidence_uncached(root: Path, static_items: dict[str, list[WorkItem]], policy: dict[str, Any]) -> list[dict[str, Any]]:
     by_key: dict[tuple[str, str], dict[str, Any]] = {}
     qpath = root / "kb" / "doc_search_queue.jsonl"
     for row in iter_jsonl(qpath):
@@ -1819,6 +2004,7 @@ def ingest_spec_manifest(root: Path, manifest_path: Path) -> dict[str, Any]:
         "documents": len(docs), "clauses": len(clauses),
         "mcp_and_tools": len(tools), "skills": len(skills),
     })
+    invalidate_derived_caches()
     return {"documents": len(docs), "clauses": len(clauses), "mcp_and_tools": len(tools), "skills": len(skills)}
 
 
@@ -3760,6 +3946,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         description="Orchestrate schema-validated production NIC-driver port analysis from one manifest entrypoint.",
     )
     ap.add_argument("--manifest", default=str(default_manifest), help="Single input manifest entrypoint used by builder and orchestrator")
+    ap.add_argument("--lock-timeout", type=float, metavar="SECONDS",
+                    help="How long to wait for the workspace lock before applying --lock-on-timeout (default: policy workspace_lock.wait_timeout_seconds)")
+    ap.add_argument("--lock-on-timeout", choices=LOCK_ON_TIMEOUT,
+                    help="What to do when the workspace lock wait times out: 'exit' or 'override' (default: policy workspace_lock.on_timeout)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def root_arg(p: argparse.ArgumentParser) -> None:
@@ -3950,7 +4140,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     policy_override = Path(args.policy).expanduser().resolve() if getattr(args, "policy", None) else None
 
-    with workspace_lock(root):
+    with workspace_lock(root, {
+        "wait_timeout_seconds": getattr(args, "lock_timeout", None),
+        "on_timeout": getattr(args, "lock_on_timeout", None),
+    }):
         if args.cmd == "init":
             res = initialize(root, policy_override)
             print(json.dumps(res, indent=2, sort_keys=True))

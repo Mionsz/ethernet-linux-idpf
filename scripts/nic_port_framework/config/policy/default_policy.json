@@ -187,5 +187,13 @@
       "P1"
     ],
     "warn_final_missing_required_tests": true
+  },
+  "workspace_lock": {
+    "_comment": "Behaviour when another process holds the orchestration workspace lock. on_timeout: 'override' continues without the lock, 'exit' aborts. While waiting on a terminal, typing 'yes' overrides immediately.",
+    "announce_interval_seconds": 60,
+    "interactive_override": true,
+    "on_timeout": "override",
+    "poll_interval_seconds": 5,
+    "wait_timeout_seconds": 3600
   }
 }

@@ -39,7 +39,9 @@ FORCE=0
 RESUME=0
 STAGES=""
 OSAL_MODE=""
-LOG_DIR="${FRAMEWORK_DIR}/.logs"
+LOCK_TIMEOUT=""
+LOCK_ON_TIMEOUT=""
+LOG_DIR="${FRAMEWORK_OUT_DIR}/.logs"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
 
 PREP_STAGES=(preflight extractor compiledb validate osal extract headers diagnose init scope specs status)
@@ -60,6 +62,8 @@ Options:
   --model NAME           LLM model id; enables the analysis stages
   --jobs N               Parallel prompt executions          (default: 4)
   --osal-mode MODE       optional|mandatory; overrides config/rules/osal_rules.json
+  --lock-timeout SECONDS How long to wait for the workspace lock (default: policy, 3600)
+  --lock-on-timeout ACT  exit|override once the lock wait expires (default: policy, override)
   --device-flow          Authenticate the LLM provider interactively (first run)
   --force                Ignore stage gates when running analysis stages
   --resume               Use 'resume' instead of 'build' for extraction
@@ -90,6 +94,8 @@ while [[ $# -gt 0 ]]; do
     --model)          MODEL="$2"; shift 2 ;;
     --jobs)           JOBS="$2"; shift 2 ;;
     --osal-mode)      OSAL_MODE="$2"; shift 2 ;;
+    --lock-timeout)   LOCK_TIMEOUT="$2"; shift 2 ;;
+    --lock-on-timeout) LOCK_ON_TIMEOUT="$2"; shift 2 ;;
     --device-flow)    DEVICE_FLOW=1; shift ;;
     --force)          FORCE=1; shift ;;
     --resume)         RESUME=1; shift ;;
@@ -281,6 +287,7 @@ write_summary() {
       echo "| Artifact | Path |"
       echo "|---|---|"
       echo "| output manifest | \`${ANALYSIS_ROOT}/output_manifest.json\` |"
+      echo "| target scope | \`${ANALYSIS_ROOT}/reports/target_scope.md\` |"
       echo "| header inventory | \`${ANALYSIS_ROOT}/reports/header_summary.md\` |"
       echo "| osal policy | \`${ANALYSIS_ROOT}/reports/osal_summary.md\` |"
       echo "| orchestration status | \`${ANALYSIS_ROOT}/orchestration\` |"
@@ -319,7 +326,12 @@ on_exit() {
 trap on_exit EXIT
 trap 'on_interrupt' INT TERM
 
-orch() { python3 "${ORCH}" --manifest "${MANIFEST}" "$@"; }
+orch() {
+  local -a lock=()
+  [[ -n "${LOCK_TIMEOUT}" ]] && lock+=(--lock-timeout "${LOCK_TIMEOUT}")
+  [[ -n "${LOCK_ON_TIMEOUT}" ]] && lock+=(--lock-on-timeout "${LOCK_ON_TIMEOUT}")
+  python3 "${ORCH}" --manifest "${MANIFEST}" "${lock[@]}" "$@"
+}
 
 # Render every item of a stage, then execute the ready ones through the provider.
 run_analysis_stage() {

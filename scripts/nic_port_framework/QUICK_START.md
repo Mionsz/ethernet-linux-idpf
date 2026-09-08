@@ -57,15 +57,29 @@ cd "${FRAMEWORK_DIR}"
 ```
 
 Per-stage logs: `.logs/<run-id>-<stage>.log`. Combined log: `.logs/run-<run-id>.log`.
-A summary table with PASS/FAIL and duration per stage is printed at the end.
+Every run also writes `.logs/<run-id>-summary.md` (copied to `${ANALYSIS_ROOT}/reports/run_summary.md`)
+with what ran, what broke, what never ran and the exact command to continue. It is written on an
+aborted or interrupted run too.
 
 Selected stages only:
 
 ```bash
 ./run_framework.sh --stages status
-./run_framework.sh --stages extract,diagnose,init
+./run_framework.sh --stages extract,headers,scope
 ./run_framework.sh --stages all --model gpt-4.1
 ```
+
+If another process holds the workspace lock the run says so, names the holder, and waits:
+
+```text
+Workspace is locked by another process: .../orchestration/.lock
+  holder PID 394233: python3 nic_port_orchestrator.py ... init
+Waiting 60 minutes for workspace lock release... [To override the lock, type 'yes' and press enter]
+```
+
+Defaults come from `config/policy/default_policy.json` -> `workspace_lock`
+(`wait_timeout_seconds: 3600`, `on_timeout: override`). Override per run with
+`--lock-timeout SECONDS` and `--lock-on-timeout exit|override`.
 
 ---
 
@@ -112,13 +126,51 @@ python3 nic_port_pipeline.py --manifest "${MANIFEST}" diagnose-extraction
 
 Required before continuing: `run_state = COMPLETE` and `extraction_quality = PASS`.
 
-### 4.5 Initialize orchestration
+### 4.5 Scan headers and apply the OSAL policy
+
+```bash
+# Declarations that no translation unit compiled (structs, includes, macros).
+python3 nic_port_headers.py --manifest "${MANIFEST}" scan
+
+# OSAL surface. Default mode is 'optional': context only, sources untouched.
+python3 nic_port_osal.py --manifest "${MANIFEST}" index
+python3 nic_port_osal.py --manifest "${MANIFEST}" plan
+
+# Mandatory mode rewrites a staged COPY of the sources onto the OSAL API and
+# retargets the compile database at it. The repository is never modified.
+python3 nic_port_osal.py --manifest "${MANIFEST}" --mode mandatory stage
+```
+
+Mode and symbol map live in `config/rules/osal_rules.json`. A mapping is applied only when the
+OSAL macro takes the same number of arguments as the Linux original; the rest are reported for
+manual work in `reports/osal_summary.md`.
+
+### 4.6 Scope the port to the destination OS
+
+```bash
+python3 nic_port_target.py --manifest "${MANIFEST}" --root "${ANALYSIS_ROOT}" scope
+```
+
+This runs before any per-method analysis and does two things:
+
+1. Removes source-OS-only methods from the porting loop (kcompat shims, devlink, auxiliary-bus
+   IDC, XDP/AF_XDP, VFIO mdev, ethtool). Nothing is deleted: each exclusion records the rule,
+   the rationale and a disposition of `drop`, `replace` or `defer`.
+2. Plans the work items the destination OS mandates and that have no source counterpart
+   (module glue, `ifdi_*` methods, `isc_txd_*` / `isc_rxd_*` datapath, MSI-X assignment,
+   ifmedia, busdma, sysctl tree, build and validation).
+
+The active profile is `config/targets/freebsd_iflib.json` (`configuration.target_profile`).
+Result for the IDPF baseline: 625 methods extracted, 480 retained, 145 excluded, 32 target work
+items across 11 workflows. Review `reports/target_scope.md` before spending model budget.
+
+### 4.7 Initialize orchestration
 
 ```bash
 python3 nic_port_orchestrator.py --manifest "${MANIFEST}" init --root "${ANALYSIS_ROOT}"
 ```
 
-### 4.6 Ingest specifications, authorized MCP tools and skills
+### 4.8 Ingest specifications, authorized MCP tools and skills
 
 ```bash
 python3 nic_port_orchestrator.py --manifest "${MANIFEST}" \
@@ -132,7 +184,7 @@ Ingest specifications before running any analysis stage. Ingesting or changing t
 changes the specification fingerprint and marks already accepted results `STALE`, which
 means they have to be executed again.
 
-### 4.7 Status
+### 4.9 Status
 
 ```bash
 python3 nic_port_pipeline.py --manifest "${MANIFEST}" status --verbose
@@ -161,9 +213,11 @@ Alternative to device flow: `export GITHUB_TOKEN=<pat-with-copilot-scope>`.
 ## 6. Analysis stages
 
 Run in this order. Each stage is `render` (build prompts) then `run` (execute them).
+The `target` stage comes before `methods`: the destination-OS obligations are designed first,
+so the per-method loop can refer to them instead of inventing a target design per function.
 
 ```bash
-for STAGE in architecture methods evidence files subsystems final; do
+for STAGE in architecture target methods evidence files subsystems final; do
   python3 nic_port_orchestrator.py --manifest "${MANIFEST}" \
     render --root "${ANALYSIS_ROOT}" --stage "${STAGE}"
 
@@ -201,7 +255,8 @@ python3 nic_port_orchestrator.py --manifest "${MANIFEST}" \
 | Stage | Unlocked when |
 |---|---|
 | architecture | extraction COMPLETE + quality PASS |
-| methods | architecture VALID at confidence >= C3 |
+| target | architecture VALID at confidence >= C3 + target work items planned (`scope`) |
+| methods | architecture VALID at >= C3 + 100% target work items VALID at >= C2 |
 | evidence | 100% methods VALID at >= C2 |
 | files | 100% methods at >= C3 + 100% critical evidence resolved |
 | subsystems | 100% files VALID at >= C3 |
@@ -270,18 +325,29 @@ rm -rf "${ANALYSIS_ROOT}"
 ```text
 ${FRAMEWORK_OUT_DIR}/compile_commands.json          authoritative build database
 ${FRAMEWORK_OUT_DIR}/nic-port-clang-extractor       LibTooling extractor binary
+${FRAMEWORK_OUT_DIR}/osal_staged_source/            OSAL-rewritten sources (mandatory mode only)
 ${ANALYSIS_ROOT}/output_manifest.json               start here: index of everything produced
 ${ANALYSIS_ROOT}/manifest/run_state.json            extraction transaction state
 ${ANALYSIS_ROOT}/manifest/extraction_quality.json   extraction quality gate
+${ANALYSIS_ROOT}/manifest/header_coverage.json      headers not covered by any translation unit
+${ANALYSIS_ROOT}/manifest/osal_plan.json            OSAL call sites and manual-review list
 ${ANALYSIS_ROOT}/kb/functions.jsonl                 compiler-derived source knowledge
-${ANALYSIS_ROOT}/indexes/*.csv                      portability/API/include indexes
+${ANALYSIS_ROOT}/kb/headers.jsonl                   header declarations and include obligations
+${ANALYSIS_ROOT}/kb/osal_index.json                 OSAL API surface and mapping status
+${ANALYSIS_ROOT}/indexes/*.csv                      portability/API/include/header indexes
 ${ANALYSIS_ROOT}/reports/portability_summary.md     human summary
+${ANALYSIS_ROOT}/reports/header_summary.md          header inventory
+${ANALYSIS_ROOT}/reports/osal_summary.md            OSAL policy and substitution plan
+${ANALYSIS_ROOT}/reports/target_scope.md            excluded source methods + target work items
+${ANALYSIS_ROOT}/reports/run_summary.md             last run: what ran, what broke, how to continue
+${ANALYSIS_ROOT}/orchestration/target/exclusions.json   methods removed from the porting loop
+${ANALYSIS_ROOT}/orchestration/target/items/*.json      target-mandated work items
 ${ANALYSIS_ROOT}/orchestration/prompts/<stage>/     enriched prompts
 ${ANALYSIS_ROOT}/orchestration/results/<stage>/     validated results
 ${ANALYSIS_ROOT}/orchestration/reports/status.json  coverage + gates
 ${ANALYSIS_ROOT}/orchestration/registries/          requests and risks
 ${ANALYSIS_ROOT}/orchestration/traceability/        features, tests, links
-${FRAMEWORK_DIR}/.logs/                             run logs
+${FRAMEWORK_DIR}/.logs/                             run logs and run summaries
 ```
 
 ---
@@ -294,15 +360,19 @@ ${FRAMEWORK_DIR}/.logs/                             run logs
 | extractor | `clang++-22 ... nic_port_clang_extractor.cpp` |
 | compiledb | `make -C` + `gen_compile_commands.py` |
 | validate | `nic_port_pipeline.py validate-manifest` |
+| osal | `nic_port_osal.py index` + `plan` (+ `stage` in mandatory mode) |
 | extract | `nic_port_pipeline.py build` (or `resume` with `--resume`) |
+| headers | `nic_port_headers.py scan` |
 | diagnose | `nic_port_pipeline.py diagnose-extraction` |
 | init | `nic_port_orchestrator.py init` |
+| scope | `nic_port_target.py scope` (Linux-only triage + target work item plan) |
 | specs | `ingest-spec` + `capabilities` |
 | status | `nic_port_pipeline.py status --verbose` |
-| architecture, methods, evidence, files, subsystems, final | `render` + `run` |
+| architecture, target, methods, evidence, files, subsystems, final | `render` + `run` |
 | audit | `verify-evidence`, `traceability`, `consistency`, `audit` |
 
-`preflight`, `extractor`, `compiledb`, `validate`, `extract` and `init` are hard prerequisites: the script aborts if one fails. Later stages are reported and the run continues.
+`preflight`, `extractor`, `compiledb`, `validate`, `osal`, `extract`, `init` and `scope` are hard
+prerequisites: the script aborts if one fails. Later stages are reported and the run continues.
 
 ```bash
 /opt/ethernet-linux-idpf/scripts/nic_port_framework/run_framework.sh --manifest /opt/ethernet-linux-idpf/scripts/nic_port_framework/examples/idpf.full.manifest.json --spec-manifest /opt/ethernet-linux-idpf/scripts/nic_port_framework/templates/orchestrator/records/spec_manifest.example.json --out-dir /opt/ethernet-linux-idpf/.out --repo-dir /opt/ethernet-linux-idpf/ --src-dir /opt/ethernet-linux-idpf/idpf/src --kernel-dir /usr/src/linux-headers-6.8.0-117-generic --model claude-opus-5 --jobs 20 --device-flow --force --stages all
