@@ -179,6 +179,18 @@
     "timeout_seconds": 1800
   },
   "schema_version": "3.0",
+  "target_access": {
+    "_comment": "Stages whose prompts carry an assigned target-environment endpoint. Removing a stage keeps its already-accepted results valid, because the rendered prompt stops changing.",
+    "prompt_stages": [
+      "architecture",
+      "target",
+      "methods",
+      "evidence",
+      "files",
+      "subsystems",
+      "final"
+    ]
+  },
   "traceability": {
     "block_final_missing_required_tests": false,
     "require_test_feature_link": true,

@@ -10,8 +10,7 @@
   "inputs": {
     "compile_commands": "${FRAMEWORK_OUT_DIR}/compile_commands.json",
     "kernel_build_dir": "${KERNEL_BUILD_DIR}",
-    "source_root": "${FRAMEWORK_REPO_SRC_DIR}",
-    "specification_manifests": []
+    "source_root": "${FRAMEWORK_REPO_SRC_DIR}"
   },
   "manifest_version": "3.3",
   "output": {

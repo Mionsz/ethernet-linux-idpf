@@ -170,7 +170,7 @@ items across 11 workflows. Review `reports/target_scope.md` before spending mode
 python3 nic_port_orchestrator.py --manifest "${MANIFEST}" init --root "${ANALYSIS_ROOT}"
 ```
 
-### 4.8 Ingest specifications, authorized MCP tools and skills
+### 4.8 Ingest specifications, authorized capabilities and target access
 
 ```bash
 python3 nic_port_orchestrator.py --manifest "${MANIFEST}" \
@@ -180,9 +180,39 @@ python3 nic_port_orchestrator.py --manifest "${MANIFEST}" \
   capabilities --root "${ANALYSIS_ROOT}"
 ```
 
-Ingest specifications before running any analysis stage. Ingesting or changing them later
-changes the specification fingerprint and marks already accepted results `STALE`, which
-means they have to be executed again.
+`--spec-manifest` defaults to `templates/orchestrator/records/spec_manifest.example.json`, and the
+same file is the default `inputs.specification_manifests` entry, so `init` ingests it automatically.
+
+The spec manifest has four arrays. Every entry accepts `document_id`, `title`, `version`,
+`authority_class`, `path`, and the optional `description` and `notes`:
+
+| Array | Purpose |
+|---|---|
+| `documents` | Specifications and handbooks; split into citable clauses |
+| `mcp-and-tools-list` | MCP servers/tools the agent may call (`path` may be a selector like `gitnexus/*`) |
+| `skills` | Skill files the agent may apply |
+| `target-access` | Commands that reach an environment matching the target OS (`command` instead of `path`, plus `target_os`) |
+
+`target-access` entries are handed to the agents: every rendered prompt carries one assigned
+endpoint so results can be verified on the destination platform. With more than one endpoint the
+assignment is round-robin across the work items of a stage, so parallel agents spread over the
+pool instead of contending for one host. The entry's `notes` are rendered as constraints - use
+them to state what the host may and may not be used for.
+
+```json
+{
+  "document_id": "freebsd-iflib-target-01",
+  "title": "FreeBSD iflib porting target host",
+  "command": "ssh -o StrictHostKeyChecking=no ... root@10.102.18.118",
+  "target_os": "FreeBSD",
+  "description": "Compile against real FreeBSD headers, run userspace unit tests.",
+  "notes": "Build and userspace tests only. Do NOT kldload against hardware."
+}
+```
+
+Ingesting or changing specifications changes the specification fingerprint and marks already
+accepted results `STALE`. Because the default manifest is ingested during `init`, this no longer
+happens mid-run - but keep it in mind when editing the spec manifest later.
 
 ### 4.9 Status
 
@@ -342,6 +372,7 @@ ${ANALYSIS_ROOT}/reports/target_scope.md            excluded source methods + ta
 ${ANALYSIS_ROOT}/reports/run_summary.md             last run: what ran, what broke, how to continue
 ${ANALYSIS_ROOT}/orchestration/target/exclusions.json   methods removed from the porting loop
 ${ANALYSIS_ROOT}/orchestration/target/items/*.json      target-mandated work items
+${ANALYSIS_ROOT}/orchestration/specifications/target_access.jsonl  endpoints handed to the agents
 ${ANALYSIS_ROOT}/orchestration/prompts/<stage>/     enriched prompts
 ${ANALYSIS_ROOT}/orchestration/results/<stage>/     validated results
 ${ANALYSIS_ROOT}/orchestration/reports/status.json  coverage + gates

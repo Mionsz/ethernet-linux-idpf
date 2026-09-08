@@ -1,777 +1,1084 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (C) 2019-2026 Intel Corporation */
 
-#include "kcompat.h"
-#include <linux/aer.h>
+/*
+ * Module and device entry points.
+ *
+ * FreeBSD port notes
+ * ------------------
+ * Driver model.  Linux registers a struct pci_driver whose probe() builds
+ * everything.  FreeBSD registers a newbus driver whose device methods are
+ * iflib's, and the real work moves into ifdi_attach_pre()/ifdi_attach_post():
+ * iflib allocates the softc, creates the ifnet and only then calls back.  The
+ * iflib softc is struct idpf_netdev_priv, the per-vport handle; the
+ * function-wide struct idpf_adapter is allocated here and reached through
+ * np->adapter.  [FBSD15:A30]
+ *
+ * MMIO.  Linux devm_ioremap()s the mailbox and reset windows separately.
+ * FreeBSD will not hand out the same BAR twice, so BAR0 is mapped once into
+ * dev_ops.static_reg_info[0] and every window is an offset into it, using the
+ * geometry idpf_dev_ops_init() published in struct idpf_hw.  [FBSD15:A31]
+ *
+ * Deferred work.  The Linux workqueues become taskqueues, with the periodic
+ * items on callouts and the delayed one-shots on timeout_tasks.  [FBSD15:A33]
+ *
+ * Removed.  PCI AER/error-handler callbacks, PTM, devlink, VFIO/mdev and
+ * SR-IOV VF enablement have no counterpart reachable from here: FreeBSD
+ * surfaces SR-IOV through pci_iov_attach() and a PCI_IOV_* method set, which
+ * is a separate feature, and PCI error recovery is handled by the bus rather
+ * than by per-driver callbacks.  The class-based PCI match Linux uses is also
+ * gone; iflib matches on vendor/device, which the explicit table covers.
+ * [LOCAL:A22]
+ */
+
+#include <sys/param.h>
+#include <sys/systm.h>
+#include <sys/bus.h>
+#include <machine/atomic.h>
+#include <sys/endian.h>
+#include <sys/kernel.h>
+#include <sys/lock.h>
+#include <sys/malloc.h>
+#include <sys/module.h>
+#include <sys/mutex.h>
+#include <sys/rman.h>
+#include <sys/socket.h>
+#include <sys/sx.h>
+#include <sys/taskqueue.h>
+
+#include <machine/bus.h>
+#include <machine/resource.h>
+
+#include <dev/pci/pcireg.h>
+#include <dev/pci/pcivar.h>
+
+#include <net/if.h>
+#include <net/if_media.h>
+#include <net/if_var.h>
+#include <net/ethernet.h>
+#include <net/iflib.h>
+
+#include "ifdi_if.h"
+
 #include "idpf.h"
 #include "idpf_lan_vf_regs.h"
 #include "idpf_virtchnl.h"
+#include "idpf_ptp.h"
 
-#define DRV_SUMMARY    "Intel(R) Infrastructure Data Path Function Linux Driver"
+#define DRV_SUMMARY	"Intel(R) Infrastructure Data Path Function Driver"
 
-#define IDPF_NETWORK_ETHERNET_PROGIF				0x01
-#define IDPF_CLASS_NETWORK_ETHERNET_PROGIF			\
-	(PCI_CLASS_NETWORK_ETHERNET << 8 | IDPF_NETWORK_ETHERNET_PROGIF)
-#define IDPF_VF_TEST_VAL		0xfeed0000u
+/* How long attach waits for the control plane to finish creating vports. */
+#define IDPF_RESET_SETTLE_MS	15000
 
-MODULE_VERSION(IDPF_DRV_VER);
-static const char idpf_driver_string[] = DRV_SUMMARY;
-static const char idpf_copyright[] = "Copyright (C) 2019-2026 Intel Corporation";
-MODULE_DESCRIPTION(DRV_SUMMARY);
-MODULE_LICENSE("GPL");
+#define IDPF_INTEL_VENDOR_ID	0x8086
 
-/**
- * idpf_remove - Device removal routine
- * @pdev: PCI device information struct
+/* Written to VF_ARQBAL to tell a VF BAR apart from a PF one. */
+#define IDPF_VF_TEST_VAL	0xfeed0000u
+
+MALLOC_DEFINE(M_IDPF, "idpf", "Intel(R) IDPF");
+
+static void *idpf_register(device_t dev);
+
+static pci_vendor_info_t idpf_vendor_info_array[] = {
+	PVID(IDPF_INTEL_VENDOR_ID, IDPF_DEV_ID_PF,
+	    "Intel(R) Infrastructure Data Path Function PF"),
+	PVID(IDPF_INTEL_VENDOR_ID, IDPF_DEV_ID_VF,
+	    "Intel(R) Infrastructure Data Path Function VF"),
+	PVID(IDPF_INTEL_VENDOR_ID, IDPF_DEV_ID_VF_SIOV,
+	    "Intel(R) Infrastructure Data Path Function VF (S-IOV)"),
+	PVID(IDPF_INTEL_VENDOR_ID, IDPF_DEV_ID_PF_SIMICS,
+	    "Intel(R) Infrastructure Data Path Function PF (Simics)"),
+	PVID(IDPF_INTEL_VENDOR_ID, IDPF_DEV_ID_VF_SIMICS,
+	    "Intel(R) Infrastructure Data Path Function VF (Simics)"),
+	PVID_END
+};
+
+static device_method_t idpf_methods[] = {
+	DEVMETHOD(device_register,	idpf_register),
+	DEVMETHOD(device_probe,		iflib_device_probe),
+	DEVMETHOD(device_attach,	iflib_device_attach),
+	DEVMETHOD(device_detach,	iflib_device_detach),
+	DEVMETHOD(device_shutdown,	iflib_device_shutdown),
+	DEVMETHOD(device_suspend,	iflib_device_suspend),
+	DEVMETHOD(device_resume,	iflib_device_resume),
+	DEVMETHOD_END
+};
+
+static driver_t idpf_driver = {
+	"idpf", idpf_methods, sizeof(struct idpf_netdev_priv)
+};
+
+/* The test module compiles this file for its statics, not to claim devices. */
+#ifndef IDPF_UNIT_TEST
+DRIVER_MODULE(idpf, pci, idpf_driver, 0, 0);
+MODULE_VERSION(idpf, 1);
+MODULE_DEPEND(idpf, pci, 1, 1, 1);
+MODULE_DEPEND(idpf, ether, 1, 1, 1);
+MODULE_DEPEND(idpf, iflib, 1, 1, 1);
+IFLIB_PNP_INFO(pci, idpf, idpf_vendor_info_array);
+#endif
+
+/*
+ * The split queue model puts the completion queue at ring 0 of every queue
+ * set, so a TX set is {completion, data} and an RX set is {completion, and
+ * one free list per buffer queue}.  IFLIB_SKIP_MSIX is set because the
+ * function's MSI-X vectors are pooled across vports in idpf_intr_req()
+ * rather than allocated per interface.  [FBSD15:A30-A34]
  */
-static void idpf_remove(struct pci_dev *pdev)
-{
-	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
-	int i;
+static struct if_shared_ctx idpf_sctx = {
+	.isc_magic		= IFLIB_MAGIC,
+	.isc_driver		= &idpf_if_driver,
+	.isc_q_align		= PAGE_SIZE,
+	.isc_admin_intrcnt	= 1,
+	.isc_vendor_info	= idpf_vendor_info_array,
+	.isc_driver_version	= IDPF_DRV_VER,
 
-	set_bit(IDPF_REMOVE_IN_PROG, adapter->flags);
+	.isc_nfl		= 1,
+	.isc_ntxqs		= 1,
+	.isc_nrxqs		= 1,
 
-	/* Wait until vc_event_task is done to consider if any hard reset is
-	 * in progress else we may go ahead and release the resources but the
-	 * thread doing the hard reset might continue the init path and
-	 * end up in bad state.
-	 */
-	cancel_delayed_work_sync(&adapter->vc_event_task);
+	.isc_ntxd_min		= { IDPF_MIN_TXQ_DESC, IDPF_MIN_TXQ_DESC },
+	.isc_ntxd_max		= { IDPF_MAX_TXQ_DESC, IDPF_MAX_TXQ_DESC },
+	.isc_ntxd_default	= { IDPF_DFLT_TX_Q_DESC_COUNT,
+				    IDPF_DFLT_TX_Q_DESC_COUNT },
+	.isc_nrxd_min		= { IDPF_MIN_RXQ_DESC, IDPF_MIN_RXQ_DESC,
+				    IDPF_MIN_RXQ_DESC },
+	.isc_nrxd_max		= { IDPF_MAX_RXQ_DESC, IDPF_MAX_RXQ_DESC,
+				    IDPF_MAX_RXQ_DESC },
+	.isc_nrxd_default	= { IDPF_DFLT_RX_Q_DESC_COUNT,
+				    IDPF_DFLT_RX_Q_DESC_COUNT,
+				    IDPF_DFLT_RX_Q_DESC_COUNT },
 
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
-	if (adapter->dev_ops.vdcm_deinit)
-		adapter->dev_ops.vdcm_deinit(pdev);
+	.isc_tx_maxsize		= IDPF_TX_MAX_DESC_DATA,
+	.isc_tx_maxsegsize	= IDPF_TX_MAX_DESC_DATA,
+	.isc_tso_maxsize	= IDPF_TX_MAX_DESC_DATA,
+	.isc_tso_maxsegsize	= IDPF_TX_MAX_READ_REQ_SIZE,
+	.isc_rx_maxsize		= IDPF_RX_BUF_4096,
+	.isc_rx_maxsegsize	= IDPF_RX_BUF_4096,
+	.isc_rx_nsegments	= IDPF_MAX_BUFQS_PER_RXQ_GRP,
 
-#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
-#ifdef DEVLINK_ENABLED
-	idpf_devlink_deinit(adapter);
-#endif /* DEVLINK_ENABLED */
-
-	if (adapter->num_vfs) {
-		pci_lock_rescan_remove();
-		idpf_sriov_configure(pdev, 0);
-		pci_unlock_rescan_remove();
-	}
-	idpf_vc_core_deinit(adapter);
-
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
-	xa_destroy(&adapter->adi_info.priv_info);
-
-#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
-	/* Be a good citizen and leave the device clean on exit */
-	adapter->dev_ops.reg_ops.trigger_reset(adapter, IDPF_HR_FUNC_RESET);
-	idpf_deinit_dflt_mbx(adapter);
-
-	if (!adapter->netdevs)
-		goto destroy_wqs;
-
-	/* There are some cases where it's possible to still have netdevs
-	 * registered with the stack at this point, e.g. if the driver detected
-	 * a HW reset and rmmod is called before it fully recovers. Unregister
-	 * any stale netdevs here.
-	 */
-	for (i = 0; i < adapter->max_vports; i++) {
-		if (!adapter->netdevs[i])
-			continue;
-		if (adapter->netdevs[i]->reg_state != NETREG_UNINITIALIZED)
-			unregister_netdev(adapter->netdevs[i]);
-		free_netdev(adapter->netdevs[i]);
-		adapter->netdevs[i] = NULL;
-	}
-
-destroy_wqs:
-	destroy_workqueue(adapter->init_wq);
-	destroy_workqueue(adapter->serv_wq);
-	destroy_workqueue(adapter->mbx_wq);
-	if (IS_SILICON_DEVICE(adapter->hw.subsystem_device_id))
-		destroy_workqueue(adapter->stats_wq);
-	destroy_workqueue(adapter->vc_event_wq);
-
-	for (i = 0; i < adapter->max_vports; i++) {
-		if (!adapter->vport_config[i])
-			continue;
-		kfree(adapter->vport_config[i]->user_config.q_coalesce);
-#ifndef HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS
-		kfree(adapter->vport_config[i]->affinity_config);
-#endif /* !HAVE_NETDEV_IRQ_AFFINITY_AND_ARFS */
-		kfree(adapter->vport_config[i]);
-		adapter->vport_config[i] = NULL;
-	}
-	kfree(adapter->vport_config);
-	adapter->vport_config = NULL;
-	kfree(adapter->netdevs);
-	adapter->netdevs = NULL;
-	kfree(adapter->vcxn_mngr);
-	adapter->vcxn_mngr = NULL;
-
-	mutex_destroy(&adapter->vport_ctrl_lock);
-	mutex_destroy(&adapter->vector_lock);
-	mutex_destroy(&adapter->queue_lock);
-#ifdef DEVLINK_ENABLED
-	mutex_destroy(&adapter->sf_mutex);
-#endif /* DEVLINK_ENABLED */
-
-#if IS_ENABLED(CONFIG_PCIE_PTM)
-	pci_disable_ptm(pdev);
-#endif /* CONFIG_PCIE_PTM */
-#ifdef HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING
-	pci_disable_pcie_error_reporting(pdev);
-#endif /* HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING */
-	pci_release_mem_regions(pdev);
-
-	pci_set_drvdata(pdev, NULL);
-#ifdef DEVLINK_ENABLED
-	devlink_free(priv_to_devlink(adapter));
-#else
-	kfree(adapter);
-#endif /* DEVLINK_ENABLED */
-}
+	.isc_flags		= IFLIB_SKIP_MSIX | IFLIB_ADMIN_ALWAYS_RUN,
+};
 
 /**
- * idpf_shutdown - PCI callback for shutting down device
- * @pdev: PCI device information struct
- */
-static void idpf_shutdown(struct pci_dev *pdev)
-{
-	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
-
-	set_bit(IDPF_REMOVE_IN_PROG, adapter->flags);
-
-	cancel_delayed_work_sync(&adapter->serv_task);
-	cancel_delayed_work_sync(&adapter->vc_event_task);
-	if (adapter->vcxn_mngr)
-		idpf_vc_xn_shutdown(adapter->vcxn_mngr);
-	idpf_vc_core_deinit(adapter);
-
-	idpf_deinit_dflt_mbx(adapter);
-
-	if (system_state == SYSTEM_POWER_OFF)
-		pci_set_power_state(pdev, PCI_D3hot);
-}
-
-/**
- * idpf_cfg_hw - Initialize HW struct
- * @adapter: adapter to setup hw struct for
+ * idpf_register - hand iflib the shared context
+ * @dev: device being attached
  *
- * Returns 0 on success, negative on failure
+ * Return: the shared context.
  */
-static int idpf_cfg_hw(struct idpf_adapter *adapter)
+static void *
+idpf_register(device_t dev __unused)
 {
-	resource_size_t res_start, mbx_start, rstat_start;
-	struct pci_dev *pdev = adapter->pdev;
+
+	return (&idpf_sctx);
+}
+
+/**
+ * idpf_cfg_hw - point the register windows into the BAR0 mapping
+ * @adapter: driver private data
+ *
+ * The window geometry was published by the device-ops initialiser; only the
+ * virtual addresses are filled in here.
+ *
+ * Return: 0 on success, otherwise an errno.
+ */
+static int
+idpf_cfg_hw(struct idpf_adapter *adapter)
+{
+	device_t dev = idpf_adapter_to_dev(adapter);
+	struct resource *bar0 = adapter->dev_ops.static_reg_info[0];
 	struct idpf_hw *hw = &adapter->hw;
-	struct device *dev = &pdev->dev;
-	long len;
+	u8 *base;
 
-	res_start = pci_resource_start(pdev, 0);
+	if (bar0 == NULL)
+		return (ENXIO);
 
-	/* Map mailbox space for virtchnl communication */
-	mbx_start = res_start + adapter->dev_ops.static_reg_info[0].start;
-	len = resource_size(&adapter->dev_ops.static_reg_info[0]);
-	hw->mbx.vaddr = devm_ioremap(dev, mbx_start, len);
-	if (!hw->mbx.vaddr) {
-		pci_err(pdev, "failed to allocate BAR0 mbx region\n");
+	base = (u8 *)rman_get_virtual(bar0);
 
-		return -ENOMEM;
+	if (hw->mbx.addr_len == 0 || hw->rstat.addr_len == 0) {
+		device_printf(dev,
+		    "device ops did not publish the register windows\n");
+		return (EINVAL);
 	}
-	hw->mbx.addr_start = adapter->dev_ops.static_reg_info[0].start;
-	hw->mbx.addr_len = len;
 
-	/* Map rstat space for resets */
-	rstat_start = res_start + adapter->dev_ops.static_reg_info[1].start;
-	len = resource_size(&adapter->dev_ops.static_reg_info[1]);
-	hw->rstat.vaddr = devm_ioremap(dev, rstat_start, len);
-	if (!hw->rstat.vaddr) {
-		pci_err(pdev, "failed to allocate BAR0 rstat region\n");
-
-		return -ENOMEM;
-	}
-	hw->rstat.addr_start = adapter->dev_ops.static_reg_info[1].start;
-	hw->rstat.addr_len = len;
+	hw->mbx.vaddr = base + hw->mbx.addr_start;
+	hw->rstat.vaddr = base + hw->rstat.addr_start;
 
 	hw->back = adapter;
-	hw->vendor_id = pdev->vendor;
-	hw->device_id = pdev->device;
-	hw->subsystem_device_id = pdev->subsystem_device;
+	hw->vendor_id = pci_get_vendor(dev);
+	hw->device_id = pci_get_device(dev);
+	hw->subsystem_device_id = pci_get_subdevice(dev);
+	hw->subsystem_vendor_id = pci_get_subvendor(dev);
+	hw->revision_id = pci_get_revid(dev);
 
-	return 0;
-}
-
-static struct lock_class_key idpf_pf_vport_ctrl_lock_key;
-static struct lock_class_key idpf_pf_work_lock_key;
-
-/**
- * idpf_get_device_type - Helper to find if it is a VF or PF device
- * @pdev: PCI device information struct
- *
- * Return: PF/VF or -%errno on failure.
- */
-static int idpf_get_device_type(struct pci_dev *pdev)
-{
-	void __iomem *addr;
-	int ret;
-
-	addr = ioremap(pci_resource_start(pdev, 0) + VF_ARQBAL, 4);
-	if (!addr) {
-		pci_err(pdev, "Failed to allocate BAR0 mbx region\n");
-		return -EIO;
-	}
-
-	writel(IDPF_VF_TEST_VAL, addr);
-	if (readl(addr) == IDPF_VF_TEST_VAL)
-		ret = IDPF_DEV_ID_VF;
-	else
-		ret = IDPF_DEV_ID_PF;
-
-	iounmap(addr);
-
-	return ret;
+	return (0);
 }
 
 /**
- * idpf_dev_init - Initialize device specific parameters
- * @adapter: adapter to initialize
- * @ent: entry in idpf_pci_tbl
+ * idpf_get_device_type - tell a VF BAR apart from a PF one
+ * @adapter: driver private data
  *
- * Return: %0 on success, -%errno on failure.
+ * The VF mailbox base register is writable on a VF and reads back what was
+ * written; on a PF the same offset does not behave that way.
+ *
+ * Return: IDPF_DEV_ID_VF or IDPF_DEV_ID_PF.
  */
-static int idpf_dev_init(struct idpf_adapter *adapter,
-			 const struct pci_device_id *ent)
+static int
+idpf_get_device_type(struct idpf_adapter *adapter)
 {
-	int ret;
+	struct resource *bar0 = adapter->dev_ops.static_reg_info[0];
+	u32 val;
 
-	switch (ent->device) {
-	case IDPF_DEV_ID_VF_SIOV:
-		idpf_vf_dev_ops_init(adapter);
-		return 0;
+	bus_write_4(bar0, VF_ARQBAL, IDPF_VF_TEST_VAL);
+	val = bus_read_4(bar0, VF_ARQBAL);
+
+	return (val == IDPF_VF_TEST_VAL ? IDPF_DEV_ID_VF : IDPF_DEV_ID_PF);
+}
+
+/**
+ * idpf_dev_init - install the PF or VF device operations
+ * @adapter: driver private data
+ *
+ * Return: 0 on success, ENODEV for an unrecognised device.
+ */
+static int
+idpf_dev_init(struct idpf_adapter *adapter)
+{
+	device_t dev = idpf_adapter_to_dev(adapter);
+
+	switch (pci_get_device(dev)) {
+	case IDPF_DEV_ID_PF:
 	case IDPF_DEV_ID_PF_SIMICS:
 		idpf_dev_ops_init(adapter);
-		lockdep_set_class(&adapter->vport_ctrl_lock,
-				  &idpf_pf_vport_ctrl_lock_key);
-		lockdep_init_map(&adapter->vc_event_task.work.lockdep_map,
-				 "idpf-PF-simics-vc-work", &idpf_pf_work_lock_key, 0);
-		return 0;
+		return (0);
+	case IDPF_DEV_ID_VF:
 	case IDPF_DEV_ID_VF_SIMICS:
 		idpf_vf_dev_ops_init(adapter);
-		return 0;
+		adapter->crc_enable = true;
+		return (0);
+	case IDPF_DEV_ID_VF_SIOV:
+		idpf_vf_dev_ops_init(adapter);
+		return (0);
 	default:
 		break;
 	}
 
-	if (ent->class == IDPF_CLASS_NETWORK_ETHERNET_PROGIF) {
-		ret = idpf_get_device_type(adapter->pdev);
-		switch (ret) {
-		case IDPF_DEV_ID_VF:
-			idpf_vf_dev_ops_init(adapter);
-			adapter->crc_enable = true;
-			break;
-		case IDPF_DEV_ID_PF:
-			idpf_dev_ops_init(adapter);
-			lockdep_set_class(&adapter->vport_ctrl_lock,
-					  &idpf_pf_vport_ctrl_lock_key);
-			lockdep_init_map(&adapter->vc_event_task.work.lockdep_map,
-					 "idpf-PF-vc-work",
-					 &idpf_pf_work_lock_key, 0);
-			break;
-		default:
-			return ret;
-		}
-
-		return 0;
-	}
-
-	switch (ent->device) {
-	case IDPF_DEV_ID_PF:
-		idpf_dev_ops_init(adapter);
-		lockdep_set_class(&adapter->vport_ctrl_lock,
-				  &idpf_pf_vport_ctrl_lock_key);
-		lockdep_init_map(&adapter->vc_event_task.work.lockdep_map,
-				 "idpf-PF-vc-work", &idpf_pf_work_lock_key, 0);
-		break;
+	/*
+	 * Parts that only advertise the Ethernet class are identified by
+	 * probing the VF mailbox window.
+	 */
+	switch (idpf_get_device_type(adapter)) {
 	case IDPF_DEV_ID_VF:
 		idpf_vf_dev_ops_init(adapter);
 		adapter->crc_enable = true;
-		break;
+		return (0);
+	case IDPF_DEV_ID_PF:
+		idpf_dev_ops_init(adapter);
+		return (0);
 	default:
-		return -ENODEV;
+		return (ENODEV);
 	}
-
-	return 0;
 }
 
 /**
- * idpf_probe - Device initialization routine
- * @pdev: PCI device information struct
- * @ent: entry in idpf_pci_tbl
- *
- * Returns 0 on success, negative on failure
+ * idpf_free_taskqueues - tear down the deferred-work infrastructure
+ * @adapter: driver private data
  */
-static int idpf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
+static void
+idpf_free_taskqueues(struct idpf_adapter *adapter)
 {
-	struct device *dev = &pdev->dev;
-	struct idpf_adapter *adapter;
-#ifdef DEVLINK_ENABLED
-	struct devlink *devlink;
-#endif /* DEVLINK_ENABLED */
+
+	if (adapter->init_wq != NULL) {
+		taskqueue_drain_timeout(adapter->init_wq, &adapter->init_task);
+		taskqueue_free(adapter->init_wq);
+		adapter->init_wq = NULL;
+	}
+	if (adapter->serv_wq != NULL) {
+		taskqueue_free(adapter->serv_wq);
+		adapter->serv_wq = NULL;
+	}
+	if (adapter->mbx_wq != NULL) {
+		taskqueue_drain(adapter->mbx_wq, &adapter->mbx_task);
+		taskqueue_free(adapter->mbx_wq);
+		adapter->mbx_wq = NULL;
+	}
+	if (adapter->stats_wq != NULL) {
+		taskqueue_drain(adapter->stats_wq, &adapter->stats_deferred);
+		taskqueue_free(adapter->stats_wq);
+		adapter->stats_wq = NULL;
+	}
+	if (adapter->vc_event_wq != NULL) {
+		taskqueue_drain_timeout(adapter->vc_event_wq,
+		    &adapter->vc_event_task);
+		taskqueue_free(adapter->vc_event_wq);
+		adapter->vc_event_wq = NULL;
+	}
+}
+
+/**
+ * idpf_alloc_taskqueue - create one taskqueue and start its thread
+ * @adapter: driver private data
+ * @tqp: where to store the taskqueue
+ * @suffix: name suffix for the thread
+ *
+ * Return: 0 on success, ENOMEM on failure.
+ */
+static int
+idpf_alloc_taskqueue(struct idpf_adapter *adapter, struct taskqueue **tqp,
+    const char *suffix)
+{
+	device_t dev = idpf_adapter_to_dev(adapter);
+
+	/* Assign through tqp: it is also the enqueue function's context. */
+	*tqp = taskqueue_create_fast(suffix, M_NOWAIT, taskqueue_thread_enqueue,
+	    tqp);
+	if (*tqp == NULL)
+		return (ENOMEM);
+
+	if (taskqueue_start_threads(tqp, 1, PI_NET, "%s %s",
+	    device_get_nameunit(dev), suffix) != 0) {
+		taskqueue_free(*tqp);
+		*tqp = NULL;
+		return (ENOMEM);
+	}
+
+	return (0);
+}
+
+/**
+ * idpf_alloc_taskqueues - create the deferred-work infrastructure
+ * @adapter: driver private data
+ *
+ * Return: 0 on success, otherwise an errno.
+ */
+static int
+idpf_alloc_taskqueues(struct idpf_adapter *adapter)
+{
 	int err;
 
-#ifdef DEVLINK_ENABLED
-	devlink = devlink_alloc(&idpf_devlink_ops, sizeof(struct idpf_adapter),
-				dev);
-	if (!devlink)
-		return -ENOMEM;
-	adapter = devlink_priv(devlink);
-#else
-	adapter = kzalloc(sizeof(*adapter), GFP_KERNEL);
-#endif /* DEVLINK_ENABLED */
-	if (!adapter)
-		return -ENOMEM;
+	callout_init(&adapter->serv_task, 1);
+	callout_init(&adapter->stats_task, 1);
+	callout_init(&adapter->mbx_poll_task, 1);
 
-	pr_info("%s - version %s\n", idpf_driver_string, IDPF_DRV_VER);
-	pr_info("%s\n", idpf_copyright);
+	err = idpf_alloc_taskqueue(adapter, &adapter->init_wq, "init");
+	if (err != 0)
+		goto fail;
+	err = idpf_alloc_taskqueue(adapter, &adapter->serv_wq, "service");
+	if (err != 0)
+		goto fail;
+	err = idpf_alloc_taskqueue(adapter, &adapter->mbx_wq, "mbx");
+	if (err != 0)
+		goto fail;
+	if (IS_SILICON_DEVICE(adapter->hw.subsystem_device_id)) {
+		err = idpf_alloc_taskqueue(adapter, &adapter->stats_wq,
+		    "stats");
+		if (err != 0)
+			goto fail;
+	}
+	err = idpf_alloc_taskqueue(adapter, &adapter->vc_event_wq, "vc_event");
+	if (err != 0)
+		goto fail;
 
-	adapter->pdev = pdev;
+	TIMEOUT_TASK_INIT(adapter->init_wq, &adapter->init_task, 0,
+	    idpf_init_task, adapter);
+	TIMEOUT_TASK_INIT(adapter->vc_event_wq, &adapter->vc_event_task, 0,
+	    idpf_vc_event_task, adapter);
+	TASK_INIT(&adapter->mbx_task, 0, idpf_mbx_task, adapter);
+	TASK_INIT(&adapter->stats_deferred, 0, idpf_statistics_task, adapter);
+
+	return (0);
+
+fail:
+	device_printf(idpf_adapter_to_dev(adapter),
+	    "failed to allocate taskqueues: %d\n", err);
+	idpf_free_taskqueues(adapter);
+
+	return (err);
+}
+
+/**
+ * idpf_set_softc_ctx - publish the negotiated queue geometry to iflib
+ * @ctx: iflib context
+ * @vport: vport whose default resources describe the geometry
+ *
+ * iflib reads all of this immediately after ifdi_attach_pre() returns, so it
+ * has to be filled in before then.  That is the reason the control-plane
+ * handshake runs synchronously during attach: the queue counts and descriptor
+ * sizes are only known once the vport exists.
+ *
+ * Return: 0 on success, EINVAL when the negotiated geometry does not match the
+ * ring counts declared in the shared context.
+ */
+static int
+idpf_set_softc_ctx(if_ctx_t ctx, struct idpf_vport *vport)
+{
+	if_softc_ctx_t scctx = iflib_get_softc_ctx(ctx);
+	struct idpf_q_vec_rsrc *rsrc = &vport->dflt_qv_rsrc;
+	struct idpf_adapter *adapter = vport->adapter;
+	device_t dev = idpf_adapter_to_dev(adapter);
+	bool tx_split = idpf_is_queue_model_split(rsrc->txq_model);
+	bool rx_split = idpf_is_queue_model_split(rsrc->rxq_model);
+	int expect_rxqs, expect_txqs;
+	int caps = 0;
+	int i;
+
+	/*
+	 * The shared context declares the per-set ring counts statically, so a
+	 * device that negotiates a different shape has to be rejected rather
+	 * than left to overrun the descriptor arrays.
+	 */
+	expect_txqs = tx_split ? 2 : 1;
+	expect_rxqs = rx_split ? 1 + rsrc->num_bufqs_per_qgrp : 1;
+	if (expect_txqs != idpf_sctx.isc_ntxqs ||
+	    expect_rxqs != idpf_sctx.isc_nrxqs) {
+		device_printf(dev,
+		    "negotiated queue shape %dx%d unsupported by this driver "
+		    "build (%dx%d)\n", expect_txqs, expect_rxqs,
+		    idpf_sctx.isc_ntxqs, idpf_sctx.isc_nrxqs);
+		return (EINVAL);
+	}
+
+	scctx->isc_txrx = &idpf_txrx_ops;
+
+	scctx->isc_ntxqsets = rsrc->num_txq;
+	scctx->isc_nrxqsets = rsrc->num_rxq;
+	scctx->isc_ntxqsets_max = rsrc->num_txq;
+	scctx->isc_nrxqsets_max = rsrc->num_rxq;
+	scctx->isc_vectors = rsrc->num_q_vectors;
+
+	/* Ring 0 of a split TX set is the completion queue. */
+	if (tx_split) {
+		scctx->isc_txd_size[0] =
+		    sizeof(struct idpf_splitq_tx_compl_desc);
+		scctx->isc_txd_size[1] = sizeof(union idpf_tx_flex_desc);
+	} else {
+		scctx->isc_txd_size[0] = sizeof(struct idpf_base_tx_desc);
+	}
+	for (i = 0; i < expect_txqs; i++)
+		scctx->isc_txqsizes[i] = roundup2(scctx->isc_ntxd[i] *
+		    scctx->isc_txd_size[i], PAGE_SIZE);
+
+	/* Ring 0 of an RX set is the completion queue, the rest are free lists. */
+	scctx->isc_rxd_size[0] = sizeof(union virtchnl2_rx_desc);
+	if (rx_split) {
+		for (i = 1; i < expect_rxqs; i++)
+			scctx->isc_rxd_size[i] =
+			    sizeof(struct virtchnl2_splitq_rx_buf_desc);
+	}
+	for (i = 0; i < expect_rxqs; i++)
+		scctx->isc_rxqsizes[i] = roundup2(scctx->isc_nrxd[i] *
+		    scctx->isc_rxd_size[i], PAGE_SIZE);
+
+	scctx->isc_tx_nsegments = idpf_get_max_tx_bufs(adapter);
+	scctx->isc_tx_tso_segments_max = idpf_get_max_tx_bufs(adapter);
+	scctx->isc_tx_tso_size_max = IDPF_TX_MAX_DESC_DATA;
+	scctx->isc_tx_tso_segsize_max = IDPF_TX_MAX_READ_REQ_SIZE;
+
+	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_TX_CSUM_L4V4))
+		caps |= IFCAP_TXCSUM;
+	if (idpf_is_cap_ena_all(adapter, IDPF_CSUM_CAPS, IDPF_CAP_TX_CSUM_L4V6))
+		caps |= IFCAP_TXCSUM_IPV6;
+	if (idpf_is_cap_ena(adapter, IDPF_CSUM_CAPS, IDPF_CAP_RX_CSUM))
+		caps |= IFCAP_RXCSUM | IFCAP_RXCSUM_IPV6;
+	if (idpf_is_cap_ena(adapter, IDPF_SEG_CAPS, VIRTCHNL2_CAP_SEG_IPV4_TCP))
+		caps |= IFCAP_TSO4;
+	if (idpf_is_cap_ena(adapter, IDPF_SEG_CAPS, VIRTCHNL2_CAP_SEG_IPV6_TCP))
+		caps |= IFCAP_TSO6;
+	if (idpf_is_cap_ena_all(adapter, IDPF_RSC_CAPS, IDPF_CAP_RSC))
+		caps |= IFCAP_LRO;
+	caps |= idpf_get_vlan_caps(adapter);
+	/* LINKSTATE: the control plane pushes link events to iflib. */
+	caps |= IFCAP_JUMBO_MTU | IFCAP_HWSTATS | IFCAP_LINKSTATE;
+
+	scctx->isc_capabilities = caps;
+	scctx->isc_capenable = caps;
+	scctx->isc_tx_csum_flags = IDPF_CSUM_OFFLOAD;
+
+	scctx->isc_max_frame_size = vport->max_mtu + ETHER_HDR_LEN +
+	    ETHER_CRC_LEN;
+	scctx->isc_min_frame_size = ETHER_MIN_LEN;
+
+	/*
+	 * Vectors are pooled across vports in idpf_intr_req(), not by iflib,
+	 * and IFLIB_SKIP_MSIX stops iflib reading this at all.  Left at 0
+	 * rather than -1 so it can never be turned into PCIR_BAR(-1).
+	 */
+	scctx->isc_msix_bar = 0;
+	scctx->isc_intr = IFLIB_INTR_MSIX;
+
+	scctx->isc_rss_table_size =
+	    adapter->vport_config[vport->idx]->user_config.rss_data.rss_lut_size;
+
+	return (0);
+}
+
+/**
+ * idpf_if_attach_pre - ifdi_attach_pre() implementation
+ * @ctx: iflib context
+ *
+ * Claims BAR0, identifies the device, builds the deferred-work
+ * infrastructure and runs the load-time reset through to a created vport, so
+ * that the negotiated geometry can be handed to iflib before it builds the
+ * queues.
+ *
+ * Return: 0 on success, otherwise an errno.
+ */
+int
+idpf_if_attach_pre(if_ctx_t ctx)
+{
+	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+	device_t dev = iflib_get_dev(ctx);
+	struct idpf_adapter *adapter;
+	int rid, msix_cap, err;
+
+	adapter = malloc(sizeof(*adapter), M_IDPF, M_NOWAIT | M_ZERO);
+	if (adapter == NULL)
+		return (ENOMEM);
+
+	np->adapter = adapter;
+	adapter->dev = dev;
 	adapter->drv_name = IDPF_DRV_NAME;
 	adapter->drv_ver = IDPF_DRV_VER;
 
-	adapter->req_tx_splitq = true;
-	adapter->req_rx_splitq = true;
-
-	mutex_init(&adapter->vport_ctrl_lock);
-	mutex_init(&adapter->vector_lock);
-	mutex_init(&adapter->queue_lock);
-#ifdef DEVLINK_ENABLED
-	/* Taken from mailbox receive context, so it must be live before the
-	 * mailbox starts and stay live until after it is cancelled.
+	/*
+	 * Single queue model: this control plane does not advertise
+	 * VIRTCHNL2_CAP_SPLITQ_QSCHED, and flow-scheduled split TX retires
+	 * completion tags out of order, which iflib's in-order credit
+	 * interface cannot express.
 	 */
-	mutex_init(&adapter->sf_mutex);
-#endif /* DEVLINK_ENABLED */
+	adapter->req_tx_splitq = false;
+	adapter->req_rx_splitq = false;
 
-	INIT_DELAYED_WORK(&adapter->init_task, idpf_init_task);
-	INIT_DELAYED_WORK(&adapter->serv_task, idpf_service_task);
-	INIT_DELAYED_WORK(&adapter->mbx_task, idpf_mbx_task);
-	if (IS_SILICON_DEVICE(adapter->hw.subsystem_device_id))
-		INIT_DELAYED_WORK(&adapter->stats_task, idpf_statistics_task);
-	INIT_DELAYED_WORK(&adapter->vc_event_task, idpf_vc_event_task);
+	mtx_init(&np->stats_lock, "idpf_stats", NULL, MTX_DEF);
 
-	if (!adapter->drv_name) {
-		dev_err(dev, "Invalid configuration, no drv_name given\n");
-		err = -EINVAL;
-		goto err_free;
-	}
-	if (!adapter->drv_ver) {
-		dev_err(dev, "Invalid configuration, no drv_ver given\n");
-		err = -EINVAL;
-		goto err_free;
-	}
+	sx_init(&adapter->vport_ctrl_lock, "idpf_vport_ctrl");
+	sx_init(&adapter->vector_lock, "idpf_vector");
+	sx_init(&adapter->queue_lock, "idpf_queue");
 
-	err = pcim_enable_device(pdev);
-	if (err)
-		goto err_free;
+	mtx_init(&adapter->corer_done_lock, "idpf_corer", NULL, MTX_DEF);
+	cv_init(&adapter->corer_done_cv, "idpf_corer");
 
-	err = pci_request_mem_regions(pdev, pci_name(pdev));
-	if (err) {
-		pci_err(pdev, "pci_request_mem_regions failed %pe\n", ERR_PTR(err));
-		goto err_free;
+	mtx_init(&adapter->adi_info.priv_lock, "idpf_adi", NULL, MTX_DEF);
+	TAILQ_INIT(&adapter->adi_info.priv_list);
+
+	pci_enable_busmaster(dev);
+
+	rid = PCIR_BAR(0);
+	adapter->dev_ops.static_reg_info[0] = bus_alloc_resource_any(dev,
+	    SYS_RES_MEMORY, &rid, RF_ACTIVE);
+	if (adapter->dev_ops.static_reg_info[0] == NULL) {
+		device_printf(dev, "failed to map BAR0\n");
+		err = ENXIO;
+		goto err_locks;
 	}
 
-#if IS_ENABLED(CONFIG_PCIE_PTM)
-	err = pci_enable_ptm(pdev);
-	if (err)
-		dev_info(dev, "PCIe PTM not supported by PCIe bus/controller\n");
+	/*
+	 * The MSI-X table lives in its own BAR, which pci_alloc_msix() requires
+	 * to be mapped before it will hand out vectors.  The BAR index comes
+	 * from the capability rather than being assumed.  A table in BAR0 needs
+	 * no second mapping, so static_reg_info[1] stays NULL in that case and
+	 * the table is reached through static_reg_info[0].
+	 */
+	if (pci_find_cap(dev, PCIY_MSIX, &msix_cap) == 0) {
+		u32 table;
 
-#endif /* CONFIG_PCIE_PTM */
-	/* set up for high or low dma */
-	err = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(64));
-	if (err) {
-		pci_err(pdev, "DMA configuration failed: %pe\n", ERR_PTR(err));
-		goto err_disable_ptm;
-	}
-
-#ifdef HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING
-	pci_enable_pcie_error_reporting(pdev);
-#endif /* HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING */
-	pci_set_master(pdev);
-	pci_save_state(pdev);
-	pci_set_drvdata(pdev, adapter);
-
-	if (!adapter->vcxn_mngr) {
-		adapter->vcxn_mngr = kzalloc(sizeof(*adapter->vcxn_mngr),
-					     GFP_KERNEL);
-		if (!adapter->vcxn_mngr) {
-			err = -ENOMEM;
-			goto err_wq_alloc;
+		table = pci_read_config(dev, msix_cap + PCIR_MSIX_TABLE, 4);
+		rid = PCIR_BAR(table & PCIM_MSIX_BIR_MASK);
+		if (rid != PCIR_BAR(0)) {
+			adapter->dev_ops.static_reg_info[1] =
+			    bus_alloc_resource_any(dev, SYS_RES_MEMORY, &rid,
+			    RF_ACTIVE);
+			if (adapter->dev_ops.static_reg_info[1] == NULL) {
+				device_printf(dev,
+				    "failed to map the MSI-X table BAR\n");
+				err = ENXIO;
+				goto err_bar;
+			}
 		}
 	}
 
-	/* Initialize the per-adapter virtchnl transactions. */
+	adapter->vcxn_mngr = malloc(sizeof(*adapter->vcxn_mngr), M_IDPF,
+	    M_NOWAIT | M_ZERO);
+	if (adapter->vcxn_mngr == NULL) {
+		err = ENOMEM;
+		goto err_bar;
+	}
+	/* Completion state first: idpf_vc_xn_init() marks the manager active. */
 	idpf_init_vc_xn_completion(adapter->vcxn_mngr);
 	idpf_vc_xn_init(adapter->vcxn_mngr);
-	init_completion(&adapter->corer_done);
 
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
-	xa_init(&adapter->adi_info.priv_info);
-
-#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
-	adapter->init_wq = alloc_workqueue("%s-%s-init",
-					   WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
-					   dev_driver_string(dev),
-					   dev_name(dev));
-	if (!adapter->init_wq) {
-		dev_err(dev, "Failed to allocate init workqueue\n");
-		err = -ENOMEM;
-		goto err_wq_alloc;
-	}
-
-	adapter->serv_wq = alloc_workqueue("%s-%s-service",
-					   WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
-					   dev_driver_string(dev),
-					   dev_name(dev));
-	if (!adapter->serv_wq) {
-		dev_err(dev, "Failed to allocate service workqueue\n");
-		err = -ENOMEM;
-		goto err_serv_wq_alloc;
-	}
-
-	adapter->mbx_wq = alloc_workqueue("%s-%s-mbx",
-					  WQ_UNBOUND | WQ_HIGHPRI,
-					  0, dev_driver_string(dev),
-					  dev_name(dev));
-	if (!adapter->mbx_wq) {
-		dev_err(dev, "Failed to allocate mailbox workqueue\n");
-		err = -ENOMEM;
-		goto err_mbx_wq_alloc;
-	}
-
-	if (IS_SILICON_DEVICE(adapter->hw.subsystem_device_id)) {
-		adapter->stats_wq = alloc_workqueue("%s-%s-stats",
-						    WQ_UNBOUND | WQ_MEM_RECLAIM,
-						    0, dev_driver_string(dev),
-						    dev_name(dev));
-		if (!adapter->stats_wq) {
-			dev_err(dev, "Failed to allocate statistics workqueue\n");
-			err = -ENOMEM;
-			goto err_stats_wq_alloc;
-		}
-	}
-
-	adapter->vc_event_wq = alloc_workqueue("%s-%s-vc_event",
-					       WQ_UNBOUND | WQ_MEM_RECLAIM, 0,
-					       dev_driver_string(dev),
-					       dev_name(dev));
-	if (!adapter->vc_event_wq) {
-		dev_err(dev, "Failed to allocate virtchnl event workqueue\n");
-		err = -ENOMEM;
-		goto err_vc_event_wq_alloc;
-	}
-
-	/* setup msglvl */
-	adapter->msg_enable = netif_msg_init(-1, IDPF_AVAIL_NETIF_M);
-
-	err = idpf_dev_init(adapter, ent);
-	if (err) {
-		dev_err(&pdev->dev, "Unexpected dev ID 0x%x in idpf probe\n",
-			ent->device);
-		goto destroy_vc_event_wq;
+	err = idpf_dev_init(adapter);
+	if (err != 0) {
+		device_printf(dev, "unexpected device 0x%x\n",
+		    pci_get_device(dev));
+		goto err_vcxn;
 	}
 
 	err = idpf_cfg_hw(adapter);
-	if (err) {
-		dev_err(dev, "Failed to configure HW structure for adapter: %d\n",
-			err);
-		goto destroy_vc_event_wq;
+	if (err != 0) {
+		device_printf(dev, "failed to configure HW structure: %d\n",
+		    err);
+		goto err_vcxn;
 	}
 
-#if IS_ENABLED(CONFIG_VFIO_MDEV) && defined(HAVE_PASID_SUPPORT)
-	adapter->adi_info.vdcm_init_ok = (adapter->dev_ops.vdcm_init &&
-			adapter->dev_ops.vdcm_init(adapter->pdev) == 0);
-#endif /* CONFIG_VFIO_MDEV && HAVE_PASID_SUPPORT */
+	err = idpf_alloc_taskqueues(adapter);
+	if (err != 0)
+		goto err_vcxn;
 
 	adapter->dev_ops.reg_ops.reset_reg_init(adapter);
-	set_bit(IDPF_HR_DRV_LOAD, adapter->flags);
-	queue_delayed_work(adapter->vc_event_wq, &adapter->vc_event_task,
-			   msecs_to_jiffies(10 * (pdev->devfn & 0x07)));
 
-#ifdef DEVLINK_ENABLED
-	idpf_devlink_init(adapter, dev);
+	/*
+	 * The vport has to exist before iflib builds the queues, so the load
+	 * reset is driven here rather than from the event task.  This blocks
+	 * until the control plane has answered and idpf_init_task() has created
+	 * the default vport.
+	 */
+	adapter->attach_ctx = ctx;
+	adapter->flags |= (1u << IDPF_HR_DRV_LOAD);
+	/*
+	 * idpf_reset_recover() only waits for the vport if this is set, which
+	 * is what makes the call below synchronous.
+	 */
+	adapter->flags |= (1u << IDPF_HR_RESET_IN_PROG);
+	idpf_init_hard_reset(adapter);
 
-#endif /* DEVLINK_ENABLED */
-	return 0;
-
-destroy_vc_event_wq:
-	destroy_workqueue(adapter->vc_event_wq);
-err_vc_event_wq_alloc:
-	if (IS_SILICON_DEVICE(adapter->hw.subsystem_device_id))
-		destroy_workqueue(adapter->stats_wq);
-err_stats_wq_alloc:
-	destroy_workqueue(adapter->mbx_wq);
-err_mbx_wq_alloc:
-	destroy_workqueue(adapter->serv_wq);
-err_serv_wq_alloc:
-	destroy_workqueue(adapter->init_wq);
-err_wq_alloc:
-#ifdef HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING
-	pci_disable_pcie_error_reporting(pdev);
-#endif /* HAVE_PCI_ENABLE_PCIE_ERROR_REPORTING */
-err_disable_ptm:
-#if IS_ENABLED(CONFIG_PCIE_PTM)
-	pci_disable_ptm(pdev);
-#endif /* CONFIG_PCIE_PTM */
-	pci_release_mem_regions(pdev);
-err_free:
-	if (adapter->vcxn_mngr) {
-		idpf_vc_xn_shutdown(adapter->vcxn_mngr);
-		kfree(adapter->vcxn_mngr);
-		adapter->vcxn_mngr = NULL;
+	if (np->vport == NULL) {
+		device_printf(dev, "no vport after load reset\n");
+		err = EIO;
+		goto err_bringup;
 	}
-#ifdef DEVLINK_ENABLED
-	devlink_free(priv_to_devlink(adapter));
-#else
-	kfree(adapter);
-#endif /* DEVLINK_ENABLED */
 
-	return err;
+	err = idpf_set_softc_ctx(ctx, np->vport);
+	if (err != 0)
+		goto err_bringup;
+
+	/*
+	 * iflib allocates the descriptor rings as soon as this returns and
+	 * hands them straight to ifdi_tx_queues_alloc(), so the software
+	 * queue structures have to exist now.  The Linux flow only built
+	 * them at open.
+	 */
+	err = idpf_vport_intr_alloc(np->vport, &np->vport->dflt_qv_rsrc);
+	if (err != 0) {
+		device_printf(dev, "failed to allocate interrupt vectors: %d\n",
+		    err);
+		goto err_bringup;
+	}
+
+	err = idpf_vport_queue_alloc_all(np->vport, &np->vport->dflt_qv_rsrc);
+	if (err != 0) {
+		device_printf(dev, "failed to allocate queue structures: %d\n",
+		    err);
+		goto err_bringup;
+	}
+
+	/* iflib passes this to ether_ifattach() before attach_post runs. */
+	iflib_set_mac(ctx, np->vport->default_mac_addr);
+
+	/*
+	 * The control plane reports a speed but not a medium, so only
+	 * autoselect is offered; idpf_if_media_status() fills in the detail.
+	 */
+	ifmedia_add(iflib_get_media(ctx), IFM_ETHER | IFM_AUTO, 0, NULL);
+	ifmedia_set(iflib_get_media(ctx), IFM_ETHER | IFM_AUTO);
+
+	return (0);
+
+err_bringup:
+	idpf_vc_core_deinit(adapter);
+	idpf_deinit_dflt_mbx(adapter);
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+	idpf_free_taskqueues(adapter);
+err_vcxn:
+	idpf_vc_xn_shutdown(adapter->vcxn_mngr);
+	idpf_deinit_vc_xn_completion(adapter->vcxn_mngr);
+	free(adapter->vcxn_mngr, M_IDPF);
+	adapter->vcxn_mngr = NULL;
+err_bar:
+	if (adapter->dev_ops.static_reg_info[1] != NULL) {
+		bus_release_resource(dev, SYS_RES_MEMORY,
+		    rman_get_rid(adapter->dev_ops.static_reg_info[1]),
+		    adapter->dev_ops.static_reg_info[1]);
+		adapter->dev_ops.static_reg_info[1] = NULL;
+	}
+	bus_release_resource(dev, SYS_RES_MEMORY,
+	    rman_get_rid(adapter->dev_ops.static_reg_info[0]),
+	    adapter->dev_ops.static_reg_info[0]);
+	adapter->dev_ops.static_reg_info[0] = NULL;
+err_locks:
+	mtx_destroy(&adapter->adi_info.priv_lock);
+	cv_destroy(&adapter->corer_done_cv);
+	mtx_destroy(&adapter->corer_done_lock);
+	sx_destroy(&adapter->queue_lock);
+	sx_destroy(&adapter->vector_lock);
+	sx_destroy(&adapter->vport_ctrl_lock);
+	mtx_destroy(&np->stats_lock);
+	free(adapter, M_IDPF);
+	np->adapter = NULL;
+
+	return (err);
 }
 
-/** idpf_reset_recover - Restore the driver after a reset
- * @adapter: driver specific private structure
+/**
+ * idpf_if_attach_post - ifdi_attach_post() implementation
+ * @ctx: iflib context
  *
- * Returns 0 on success, negative on failure
+ * The vports are created by the init task once the control plane answers, so
+ * this only records the context the first one will bind to.
+ *
+ * Return: 0.
  */
-int idpf_reset_recover(struct idpf_adapter *adapter)
+int
+idpf_if_attach_post(if_ctx_t ctx)
 {
+	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+	struct idpf_adapter *adapter = np->adapter;
+	if_softc_ctx_t scctx = iflib_get_softc_ctx(ctx);
+	if_t ifp = iflib_get_ifp(ctx);
+
+	/*
+	 * The vport was created before this ifnet existed, so the properties
+	 * idpf_vport_cfg_ifp() had to skip are published here.
+	 */
+	if (ifp != NULL && np->vport != NULL) {
+		np->vport->ifp = ifp;
+		if_setcapabilities(ifp, scctx->isc_capabilities);
+		if_setcapenable(ifp, scctx->isc_capenable);
+		if_setmtu(ifp, min(if_getmtu(ifp), np->vport->max_mtu));
+	}
+
+	device_printf(adapter->dev, "%s, version %s\n", DRV_SUMMARY,
+	    IDPF_DRV_VER);
+
+	idpf_ptp_sysctl_init(adapter);
+	idpf_stats_sysctl_init(adapter);
+
+	return (0);
+}
+
+/**
+ * idpf_if_detach - ifdi_detach() implementation
+ * @ctx: iflib context
+ *
+ * Unwinds attach in reverse: stop taking work, quiesce the control plane,
+ * leave the device reset, then release the locks and BAR.
+ *
+ * Return: 0.
+ */
+int
+idpf_if_detach(if_ctx_t ctx)
+{
+	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+	struct idpf_adapter *adapter = np->adapter;
+	device_t dev;
+	int i;
+
+	if (adapter == NULL)
+		return (0);
+
+	dev = idpf_adapter_to_dev(adapter);
+	adapter->flags |= (1u << IDPF_REMOVE_IN_PROG);
+
+	/*
+	 * Silence every periodic source before anything is released.  The
+	 * statistics callout walks adapter->vports[] and sends on the default
+	 * mailbox, both of which idpf_vc_core_deinit() and
+	 * idpf_deinit_dflt_mbx() below are about to free.
+	 */
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+	if (adapter->stats_wq != NULL)
+		taskqueue_drain(adapter->stats_wq, &adapter->stats_deferred);
+	if (adapter->mbx_wq != NULL)
+		taskqueue_drain(adapter->mbx_wq, &adapter->mbx_task);
+
+	/*
+	 * Wait for the event task before releasing anything: a hard reset in
+	 * flight would otherwise keep walking structures being freed.
+	 */
+	taskqueue_drain_timeout(adapter->vc_event_wq, &adapter->vc_event_task);
+
+	idpf_vc_core_deinit(adapter);
+
+	/*
+	 * idpf_vc_core_deinit() returns early unless IDPF_VC_CORE_INIT is set,
+	 * so the mailbox interrupt can still be registered here.  It must be
+	 * torn down before the adapter its handler dereferences is freed.
+	 */
+	idpf_intr_rel(adapter);
+
+	/* Leave the device clean for whoever attaches next. */
+	adapter->dev_ops.reg_ops.trigger_reset(adapter, IDPF_HR_FUNC_RESET);
+	idpf_wait_for_func_reset(adapter);
+
+	/*
+	 * Stop the device before the buffers it may still be writing into are
+	 * handed back: residual DMA into recycled memory corrupts whatever is
+	 * allocated next, which surfaces far away from this driver.
+	 */
+	pci_disable_busmaster(dev);
+	idpf_deinit_dflt_mbx(adapter);
+
+	idpf_free_taskqueues(adapter);
+
+	if (adapter->vport_config != NULL) {
+		for (i = 0; i < adapter->max_vports; i++) {
+			if (adapter->vport_config[i] == NULL)
+				continue;
+			mtx_destroy(&adapter->vport_config[i]->
+			    flow_steer_list_lock);
+			mtx_destroy(&adapter->vport_config[i]->
+			    mac_filter_list_lock);
+			free(adapter->vport_config[i]->user_config.q_coalesce,
+			    M_DEVBUF);
+			free(adapter->vport_config[i], M_DEVBUF);
+			adapter->vport_config[i] = NULL;
+		}
+		free(adapter->vport_config, M_DEVBUF);
+		adapter->vport_config = NULL;
+	}
+
+	free(adapter->iflib_ctxs, M_DEVBUF);
+	adapter->iflib_ctxs = NULL;
+
+	if (adapter->vcxn_mngr != NULL) {
+		idpf_vc_xn_shutdown(adapter->vcxn_mngr);
+		idpf_deinit_vc_xn_completion(adapter->vcxn_mngr);
+		free(adapter->vcxn_mngr, M_IDPF);
+		adapter->vcxn_mngr = NULL;
+	}
+
+	/*
+	 * Safety net against a re-arm between the drain at the top of detach
+	 * and here.  It has to precede the BAR release: these callouts reach
+	 * hardware through hw->mbx.vaddr, which the release unmaps.
+	 */
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+
+	if (adapter->dev_ops.static_reg_info[1] != NULL) {
+		bus_release_resource(dev, SYS_RES_MEMORY,
+		    rman_get_rid(adapter->dev_ops.static_reg_info[1]),
+		    adapter->dev_ops.static_reg_info[1]);
+		adapter->dev_ops.static_reg_info[1] = NULL;
+	}
+	if (adapter->dev_ops.static_reg_info[0] != NULL) {
+		bus_release_resource(dev, SYS_RES_MEMORY,
+		    rman_get_rid(adapter->dev_ops.static_reg_info[0]),
+		    adapter->dev_ops.static_reg_info[0]);
+		adapter->dev_ops.static_reg_info[0] = NULL;
+	}
+
+	/*
+	 * Unconditional and idempotent: idpf_vc_core_deinit() does this too,
+	 * but returns early when IDPF_VC_CORE_INIT was never set.
+	 */
+	idpf_ptp_release(adapter);
+
+	mtx_destroy(&adapter->adi_info.priv_lock);
+	cv_destroy(&adapter->corer_done_cv);
+	mtx_destroy(&adapter->corer_done_lock);
+	sx_destroy(&adapter->queue_lock);
+	sx_destroy(&adapter->vector_lock);
+	sx_destroy(&adapter->vport_ctrl_lock);
+	mtx_destroy(&np->stats_lock);
+
+	free(adapter, M_IDPF);
+	np->adapter = NULL;
+
+	return (0);
+}
+
+/**
+ * idpf_if_shutdown - ifdi_shutdown() implementation
+ * @ctx: iflib context
+ *
+ * Return: 0.
+ */
+int
+idpf_if_shutdown(if_ctx_t ctx)
+{
+	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+	struct idpf_adapter *adapter = np->adapter;
+
+	if (adapter == NULL)
+		return (0);
+
+	adapter->flags |= (1u << IDPF_REMOVE_IN_PROG);
+
+	callout_drain(&adapter->serv_task);
+	callout_drain(&adapter->stats_task);
+	callout_drain(&adapter->mbx_poll_task);
+	taskqueue_drain_timeout(adapter->vc_event_wq, &adapter->vc_event_task);
+
+	if (adapter->vcxn_mngr != NULL)
+		idpf_vc_xn_shutdown(adapter->vcxn_mngr);
+
+	idpf_vc_core_deinit(adapter);
+	idpf_deinit_dflt_mbx(adapter);
+
+	return (0);
+}
+
+/**
+ * idpf_reset_prepare - quiesce the driver ahead of a bus-level reset
+ * @adapter: driver private data
+ */
+static void
+idpf_reset_prepare(struct idpf_adapter *adapter)
+{
+
+	device_printf(idpf_adapter_to_dev(adapter), "resetting\n");
+
+	callout_drain(&adapter->serv_task);
+	taskqueue_drain_timeout(adapter->vc_event_wq, &adapter->vc_event_task);
+	taskqueue_drain_timeout(adapter->init_wq, &adapter->init_task);
+
+	adapter->flags |= (1u << IDPF_HR_RESET_IN_PROG);
+	idpf_detach_and_close(adapter);
+
+	idpf_vport_ctrl_lock(adapter);
+	idpf_vc_core_deinit(adapter);
+	idpf_deinit_dflt_mbx(adapter);
+	idpf_vport_ctrl_unlock(adapter);
+}
+
+/**
+ * idpf_if_suspend - ifdi_suspend() implementation
+ * @ctx: iflib context
+ *
+ * Return: 0.
+ */
+int
+idpf_if_suspend(if_ctx_t ctx)
+{
+	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+
+	if (np->adapter != NULL)
+		idpf_reset_prepare(np->adapter);
+
+	return (0);
+}
+
+/**
+ * idpf_if_resume - ifdi_resume() implementation
+ * @ctx: iflib context
+ *
+ * Recovery runs through the normal reset path so that suspend/resume and a
+ * device-asserted reset converge on the same code.
+ *
+ * Return: 0.
+ */
+int
+idpf_if_resume(if_ctx_t ctx)
+{
+	struct idpf_netdev_priv *np = iflib_get_softc(ctx);
+	struct idpf_adapter *adapter = np->adapter;
+
+	if (adapter == NULL)
+		return (0);
+
+	adapter->flags |= (1u << IDPF_PCI_CB_RESET);
+	if (adapter->vc_event_wq != NULL)
+		taskqueue_enqueue_timeout(adapter->vc_event_wq,
+		    &adapter->vc_event_task, idpf_msecs_to_ticks(300));
+
+	return (0);
+}
+
+/**
+ * idpf_reset_recover - rebuild the driver after a reset
+ * @adapter: driver private data
+ *
+ * Return: 0 on success, otherwise an errno.
+ */
+int
+idpf_reset_recover(struct idpf_adapter *adapter)
+{
+	device_t dev = idpf_adapter_to_dev(adapter);
+	int waited;
 	int err;
 
-	/* Reset is complete and so start building the driver resources again */
 	err = idpf_init_dflt_mbx(adapter);
-	if (err) {
-		dev_err(idpf_adapter_to_dev(adapter),
-			"Failed to initialize default mailbox: %d\n", err);
-
-		return err;
+	if (err != 0) {
+		device_printf(dev,
+		    "failed to initialize default mailbox: %d\n", err);
+		return (err);
 	}
 
 	if (!adapter->vcxn_mngr->active)
 		idpf_vc_xn_init(adapter->vcxn_mngr);
 
-	queue_delayed_work(adapter->serv_wq, &adapter->serv_task,
-			   msecs_to_jiffies(5 * (adapter->pdev->devfn & 0x07)));
+	callout_reset(&adapter->serv_task,
+	    idpf_msecs_to_ticks(5 * (pci_get_function(dev) & 0x07)),
+	    idpf_service_task, adapter);
 
-	/* Initialize the state machine, also allocate memory and request
-	 * resources
-	 */
 	err = idpf_vc_core_init(adapter);
-	if (err)
+	if (err != 0)
 		goto init_err;
 
-	/* Wait till all the vports are initialized to release the reset lock,
-	 * else user space callbacks may access uninitialized vports
+	/*
+	 * Hold the reset until every vport exists, otherwise an ioctl can
+	 * reach a half-built one.  Bounded: this runs in the attach thread, so
+	 * waiting forever would take the machine with it.
 	 */
-	while (test_bit(IDPF_HR_RESET_IN_PROG, adapter->flags))
-		msleep(100);
+	/* Cleared by idpf_init_task() on another thread. */
+	for (waited = 0; waited < IDPF_RESET_SETTLE_MS; waited += 100) {
+		if ((atomic_load_int(&adapter->flags) &
+		    (1u << IDPF_HR_RESET_IN_PROG)) == 0)
+			break;
+		pause("idpfrec", idpf_msecs_to_ticks(100));
+	}
+	if ((atomic_load_int(&adapter->flags) &
+	    (1u << IDPF_HR_RESET_IN_PROG)) != 0) {
+		device_printf(dev,
+		    "vports did not settle within %d ms (flags 0x%x state %d)\n",
+		    IDPF_RESET_SETTLE_MS, adapter->flags, adapter->state);
+		adapter->flags &= ~(1u << IDPF_HR_RESET_IN_PROG);
+		err = ETIMEDOUT;
+		goto init_err;
+	}
 
-	return 0;
+	return (0);
 
 init_err:
-	cancel_delayed_work_sync(&adapter->serv_task);
+	callout_drain(&adapter->serv_task);
 	idpf_deinit_dflt_mbx(adapter);
 
-	return err;
+	return (err);
 }
 
 /**
- * idpf_is_reset_detected - check if we were reset at some point
- * @adapter: driver specific private structure
+ * idpf_is_reset_detected - report whether the device is or was in reset
+ * @adapter: driver private data
  *
- * Returns true if we are either in reset currently or were previously reset.
+ * Return: true when a reset is in progress or has happened.
  */
-bool idpf_is_reset_detected(struct idpf_adapter *adapter)
+bool
+idpf_is_reset_detected(struct idpf_adapter *adapter)
 {
 	struct idpf_ctlq_reg *reg;
 	u32 arqlen;
-	/* No need to check reset state in CORER */
-	if (test_bit(IDPF_CORER_IN_PROG, adapter->flags))
-		return true;
 
-	if (!adapter->hw.arq)
-		return true;
+	/* No need to check the reset state during a CORER. */
+	if ((adapter->flags & (1u << IDPF_CORER_IN_PROG)) != 0)
+		return (true);
+
+	if (adapter->hw.arq == NULL)
+		return (true);
 
 	reg = &adapter->hw.arq->reg;
-	arqlen = readl(idpf_get_mbx_reg_addr(adapter, reg->len));
+	arqlen = idpf_reg_rd32(idpf_get_mbx_reg_addr(adapter, reg->len));
 
-	/* We are in reset if either LEN or ENA bits are cleared. */
-	return (!(arqlen & reg->len_mask) || !(arqlen & reg->len_ena_mask));
+	/* All-ones is the MMIO-loss sentinel, not a valid register value. */
+	if (arqlen == 0xFFFFFFFFu)
+		return (true);
+
+	/* In reset when either the length or the enable bits are cleared. */
+	return ((arqlen & reg->len_mask) == 0 ||
+	    (arqlen & reg->len_ena_mask) == 0);
 }
-
-/**
- * idpf_reset_prepare - Prepare to go down for reset
- * @adapter: private data struct
- */
-static void idpf_reset_prepare(struct idpf_adapter *adapter)
-{
-	pci_dbg(adapter->pdev, "resetting\n");
-	cancel_delayed_work_sync(&adapter->serv_task);
-	cancel_delayed_work_sync(&adapter->vc_event_task);
-	cancel_delayed_work_sync(&adapter->init_task);
-	set_bit(IDPF_HR_RESET_IN_PROG, adapter->flags);
-	idpf_detach_and_close(adapter);
-	idpf_idc_issue_reset_event(adapter->cdev_info);
-	mutex_lock(&adapter->vport_ctrl_lock);
-	idpf_vc_core_deinit(adapter);
-	idpf_deinit_dflt_mbx(adapter);
-	mutex_unlock(&adapter->vport_ctrl_lock);
-}
-
-/**
- * idpf_pci_err_detected - PCI error detected, about to attempt recovery
- * @pdev: PCI device struct
- * @state: PCI channel state
- *
- * Return PCI_ERS_RESULT_NEED_RESET to attempt recovery,
- * PCI_ERS_RESULT_DISCONNECT if recovery is not possible.
- */
-static pci_ers_result_t
-idpf_pci_err_detected(struct pci_dev *pdev, pci_channel_state_t state)
-{
-	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
-
-	/* Shutdown the mailbox if PCI I/O is in a bad state to avoid MBX
-	 * timeouts during the prepare stage.
-	 */
-	if (pci_channel_offline(pdev) && adapter->vcxn_mngr)
-		idpf_vc_xn_shutdown(adapter->vcxn_mngr);
-
-	idpf_reset_prepare(adapter);
-
-	if (state == pci_channel_io_perm_failure)
-		return PCI_ERS_RESULT_DISCONNECT;
-
-	/* When called due to PCI error, driver will have to force PFR on
-	 * resume, in order to complete the recovery via the event task.
-	 */
-	set_bit(IDPF_PCI_CB_RESET, adapter->flags);
-
-	return PCI_ERS_RESULT_NEED_RESET;
-}
-
-/**
- * idpf_pci_err_slot_reset - PCI undergoing reset
- * @pdev: PCI device struct
- *
- * Reset PCI state and use a register read to see if we're good.
- */
-static pci_ers_result_t
-idpf_pci_err_slot_reset(struct pci_dev *pdev)
-{
-	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
-
-	pci_restore_state(pdev);
-	pci_set_master(pdev);
-	pci_wake_from_d3(pdev, false);
-
-	/* RSTAT register cannot have all bits set during normal operation
-	 * on current HW.
-	 */
-	if (readl(adapter->reset_reg.rstat) == 0xFFFFFFFF)
-		return PCI_ERS_RESULT_DISCONNECT;
-
-	return PCI_ERS_RESULT_RECOVERED;
-}
-
-/**
- * idpf_pci_err_resume - Resume operations after PCI error recovery
- * @pdev: PCI device struct
- */
-static void idpf_pci_err_resume(struct pci_dev *pdev)
-{
-	struct idpf_adapter *adapter = pci_get_drvdata(pdev);
-
-	/* Trigger a reset, following PCI error, to allow recovery via the
-	 * regular reset handling path.
-	 */
-	if (test_and_set_bit(IDPF_PCI_CB_RESET, adapter->flags))
-		adapter->dev_ops.reg_ops.trigger_reset(adapter,
-						       IDPF_HR_FUNC_RESET);
-
-	queue_delayed_work(adapter->vc_event_wq,
-			   &adapter->vc_event_task,
-			   msecs_to_jiffies(300));
-}
-
-#ifdef HAVE_PCI_ERROR_HANDLER_RESET_PREPARE
-/**
- * idpf_pci_err_reset_prepare - Prepare driver for PCI reset
- * @pdev: PCI device struct
- */
-static void idpf_pci_err_reset_prepare(struct pci_dev *pdev)
-{
-	idpf_reset_prepare(pci_get_drvdata(pdev));
-}
-
-/**
- * idpf_pci_err_reset_done - PCI err reset recovery complete
- * @pdev: PCI device struct
- */
-static void idpf_pci_err_reset_done(struct pci_dev *pdev)
-{
-	pci_dbg(pdev, "reset done\n");
-	idpf_pci_err_resume(pdev);
-}
-
-#endif /* HAVE_PCI_ERROR_HANDLER_RESET_PREPARE */
-#ifdef HAVE_PCI_ERROR_HANDLER_RESET_NOTIFY
-/**
- * idpf_pci_err_reset_notify - Either prepare and handle a reset
- * @pdev: PCI device struct
- * @prepare: true if prepare, false if reset done
- */
-static void idpf_pci_err_reset_notify(struct pci_dev *pdev, bool prepare)
-{
-	if (prepare)
-		idpf_reset_prepare(pci_get_drvdata(pdev));
-	else
-		idpf_pci_err_resume(pdev);
-}
-
-#endif /* HAVE_PCI_ERROR_HANDLER_RESET_NOTIFY */
-#ifdef HAVE_CONST_STRUCT_PCI_ERROR_HANDLERS
-static const struct pci_error_handlers idpf_pci_err_handler = {
-#else
-static struct pci_error_handlers idpf_pci_err_handler = {
-#endif /* HAVE_CONST_STRUCT_PCI_ERROR_HANDLERS */
-	.error_detected = idpf_pci_err_detected,
-	.slot_reset = idpf_pci_err_slot_reset,
-#ifdef HAVE_PCI_ERROR_HANDLER_RESET_NOTIFY
-	.reset_notify = idpf_pci_err_reset_notify,
-#endif /* HAVE_PCI_ERROR_HANDLER_RESET_NOTIFY */
-#ifdef HAVE_PCI_ERROR_HANDLER_RESET_PREPARE
-	.reset_prepare = idpf_pci_err_reset_prepare,
-	.reset_done = idpf_pci_err_reset_done,
-#endif /* HAVE_PCI_ERROR_HANDLER_RESET_PREPARE */
-	.resume = idpf_pci_err_resume,
-};
-
-/* idpf_pci_tbl - PCI Dev idpf ID Table
- */
-static const struct pci_device_id idpf_pci_tbl[] = {
-	{ PCI_VDEVICE(INTEL, IDPF_DEV_ID_PF) },
-	{ PCI_VDEVICE(INTEL, IDPF_DEV_ID_VF) },
-	{ PCI_VDEVICE(INTEL, IDPF_DEV_ID_VF_SIOV) },
-	{ PCI_VDEVICE(INTEL, IDPF_DEV_ID_PF_SIMICS) },
-	{ PCI_VDEVICE(INTEL, IDPF_DEV_ID_VF_SIMICS) },
-	{ PCI_DEVICE_CLASS(IDPF_CLASS_NETWORK_ETHERNET_PROGIF, ~0)},
-	{ /* Sentinel */ }
-};
-MODULE_DEVICE_TABLE(pci, idpf_pci_tbl);
-
-static struct pci_driver idpf_driver = {
-	.name			= KBUILD_MODNAME,
-	.id_table		= idpf_pci_tbl,
-	.probe			= idpf_probe,
-	.sriov_configure	= idpf_sriov_configure,
-	.remove			= idpf_remove,
-	.shutdown		= idpf_shutdown,
-	.err_handler		= &idpf_pci_err_handler,
-};
-
-module_pci_driver(idpf_driver);

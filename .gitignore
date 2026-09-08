@@ -13,6 +13,7 @@ scripts/nic_port_framework/.logs/**
 **/*.so
 **/*.ko
 **/*.a
+**/*.out
 AGENTS.md
 CLAUDE.md
 auxiliary/src/kcompat_generated_defs.h

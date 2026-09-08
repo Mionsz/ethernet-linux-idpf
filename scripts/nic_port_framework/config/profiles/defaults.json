@@ -45,7 +45,9 @@
     "kernel_build_dir": null,
     "osal_root": "../../osal",
     "source_root": null,
-    "specification_manifests": []
+    "specification_manifests": [
+      "../../templates/orchestrator/records/spec_manifest.example.json"
+    ]
   },
   "manifest_version": "3.3",
   "output": {
