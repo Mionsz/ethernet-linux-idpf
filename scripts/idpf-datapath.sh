@@ -16,6 +16,7 @@
 # the observed counters rather than a fabricated PASS.  They become real
 # assertions the moment a link partner exists.
 #
+# shellcheck disable=SC2015
 # Run on the FreeBSD target as root:
 #     ./idpf-datapath.sh [interface] [module-path]
 
@@ -25,6 +26,7 @@ IFACE="${1:-idpf0}"
 KMOD="${2:-/tmp/idpfbuild/src/if_idpf.ko}"
 TESTIP="${TESTIP:-192.168.211.1/24}"
 PEER="${PEER:-192.168.211.99}"
+TEST_BROADCAST="${TEST_BROADCAST:-192.168.211.255}"
 BURST="${BURST:-200}"
 
 PASS=0
@@ -35,9 +37,21 @@ pass()    { echo "[PASS] $*"; PASS=$((PASS+1)); }
 fail()    { echo "[FAIL] $*"; FAIL=$((FAIL+1)); }
 skip()    { echo "[SKIP] $*"; SKIP=$((SKIP+1)); }
 
+[ "$(uname -s)" = "FreeBSD" ] || { echo "RESULT: SKIP - FreeBSD only"; exit 0; }
 [ "$(id -u)" -eq 0 ] || { echo "must run as root" >&2; exit 1; }
+case "${IDPF_ALLOW_HARDWARE:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_ALLOW_HARDWARE=1 to authorize hardware tests"; exit 2 ;;
+esac
+case "${IDPF_CONSOLE_CONFIRMED:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_CONSOLE_CONFIRMED=1 after verifying console access"; exit 2 ;;
+esac
 
-hw() { sysctl -n "dev.idpf.0.stats.$1" 2>/dev/null || echo 0; }
+DRIVER=${IFACE%%[0-9]*}
+UNIT=${IFACE#"$DRIVER"}
+[ -n "$UNIT" ] || UNIT=0
+hw() { sysctl -n "dev.$DRIVER.$UNIT.stats.$1" 2>/dev/null || echo 0; }
 ifc() { netstat -I "$IFACE" -b | awk 'NR==2 {print $'"$1"'}'; }
 # netstat -I -b columns: 6=Ierrs 7=Idrop 8=Ibytes 9=Opkts 10=Oerrs 11=Obytes
 errs() { netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}'; }
@@ -58,7 +72,7 @@ sleep 3
 # reaches the device, and the size tests below would only ever measure ARP.
 arp -s "$PEER" 02:00:00:00:be:ef >/dev/null 2>&1
 
-if [ "$(sysctl -n dev.idpf.0.stats.tx_bytes 2>/dev/null || echo missing)" = "missing" ]; then
+if [ "$(sysctl -n "dev.$DRIVER.$UNIT.stats.tx_bytes" 2>/dev/null || echo missing)" = "missing" ]; then
 	echo "[FAIL] hardware counters not published; cannot verify the wire"
 	echo "RESULT: 1 failure(s)"; exit 1
 fi
@@ -117,7 +131,7 @@ section "3. Broadcast and multicast classification"
 Q0=$(hw tx_broadcast)
 # The subnet broadcast address is unambiguously an L2 broadcast, unlike an
 # ARP request whose emission depends on cache state.
-ping -c 3 -i 0.2 -t 3 192.168.211.255 >/dev/null 2>&1
+ping -c 3 -i 0.2 -t 3 "$TEST_BROADCAST" >/dev/null 2>&1
 sleep 2
 DQ=$(( $(hw tx_broadcast) - Q0 ))
 [ "$DQ" -gt 0 ] && pass "broadcast counted separately ($DQ frames)" \

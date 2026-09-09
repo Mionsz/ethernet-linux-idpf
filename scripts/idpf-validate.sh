@@ -12,6 +12,7 @@
 # Stages 6-9 are the ones that have caught real defects: a stop/init cycle
 # used to release the descriptor rings that iflib owns, and detach used to
 # leak the MSI-X allocation.
+# shellcheck disable=SC2015
 
 set -u
 
@@ -35,10 +36,19 @@ skip() { log "[SKIP] $*"; echo "SKIP $*" >> "$RESULTS"; }
 fail() { log "[FAIL] $*"; echo "FAIL $*" >> "$RESULTS"; FAILURES=$((FAILURES+1)); }
 section() { log ""; log "===== $* ====="; }
 
+[ "$(uname -s)" = "FreeBSD" ] || { echo "RESULT: SKIP - FreeBSD only"; exit 0; }
 if [ "$(id -u)" -ne 0 ]; then
 	echo "must run as root" >&2
 	exit 1
 fi
+case "${IDPF_ALLOW_HARDWARE:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_ALLOW_HARDWARE=1 to authorize hardware tests"; exit 2 ;;
+esac
+case "${IDPF_CONSOLE_CONFIRMED:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_CONSOLE_CONFIRMED=1 after verifying console access"; exit 2 ;;
+esac
 
 # Counter column 5 is Ibytes, column 8 is Obytes in netstat -I -b output.
 rx_bytes() { netstat -I "$IFACE" -b 2>/dev/null | awk 'NR==2 {print $8}'; }
@@ -268,7 +278,7 @@ else
 fi
 
 section "Summary"
-cat "$RESULTS" | tee -a "$LOG"
+tee -a "$LOG" < "$RESULTS"
 log ""
 log "artifacts in $OUTDIR"
 if [ "$FAILURES" -eq 0 ]; then

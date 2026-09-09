@@ -7,11 +7,16 @@
 # through to ether_ioctl() and returns EINVAL without ever reaching the
 # driver.  Timestamping state is reported through SIOCGDRVSPEC instead.
 #
+# shellcheck disable=SC2015
 # A control plane that does not offer PTP is a PASS reporting capable=0,
 # not a failure: the driver is expected to say so rather than error.
 
 set -u
 IFACE="${1:-idpf0}"
+KMOD="${KMOD:-/tmp/idpfbuild/src/if_idpf.ko}"
+DRIVER=${IFACE%%[0-9]*}
+UNIT=${IFACE#"$DRIVER"}
+[ -n "$UNIT" ] || UNIT=0
 PASS=0
 FAIL=0
 
@@ -19,10 +24,21 @@ gate()  { echo; echo "===== $* ====="; }
 pass()  { echo "[PASS] $*"; PASS=$((PASS+1)); }
 fail()  { echo "[FAIL] $*"; FAIL=$((FAIL+1)); }
 
+[ "$(uname -s)" = "FreeBSD" ] || { echo "RESULT: SKIP - FreeBSD only"; exit 0; }
+[ "$(id -u)" -eq 0 ] || { echo "must run as root" >&2; exit 1; }
+case "${IDPF_ALLOW_HARDWARE:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_ALLOW_HARDWARE=1 to authorize hardware tests"; exit 2 ;;
+esac
+case "${IDPF_CONSOLE_CONFIRMED:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_CONSOLE_CONFIRMED=1 after verifying console access"; exit 2 ;;
+esac
+
 gate "1. Interface state"
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
 	# A preceding test may have unloaded the module.
-	kldload "${KMOD:-/tmp/idpfbuild/src/if_idpf.ko}" 2>/dev/null && sleep 8
+	kldload "$KMOD" 2>/dev/null && sleep 8
 fi
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
 	fail "interface $IFACE does not exist"
@@ -34,14 +50,63 @@ STATUS=$(ifconfig "$IFACE" | awk '/status:/ {print $2}')
 [ "$STATUS" = "active" ] && pass "link active" || fail "link not active ($STATUS)"
 
 gate "2. Timestamp configuration query (SIOCGDRVSPEC)"
-SRC=/tmp/ptp_drvspec_test.c
-BIN=/tmp/ptp_drvspec_test
-if [ ! -x "$BIN" ]; then
-	if [ ! -f "$SRC" ]; then
-		fail "missing $SRC"; echo "RESULT: $FAIL failure(s)"; exit 1
-	fi
-	cc -O2 -Wall -o "$BIN" "$SRC" || { fail "compile failed"; exit 1; }
-fi
+SRC=${TMPDIR:-/tmp}/ptp_drvspec_test.c
+BIN=${TMPDIR:-/tmp}/ptp_drvspec_test
+trap 'rm -f "$SRC" "$BIN"' EXIT HUP INT TERM
+cat > "$SRC" <<'EOF'
+#include <errno.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/sockio.h>
+#include <net/if.h>
+
+struct idpf_tstamp_config {
+	uint32_t capable;
+	int32_t tx_type;
+	int32_t rx_filter;
+	uint32_t flags;
+};
+
+int
+main(int argc, char **argv)
+{
+	struct idpf_tstamp_config config;
+	struct ifdrv request;
+	int socket_fd;
+	int rejected;
+
+	if (argc != 2)
+		return (2);
+	socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (socket_fd < 0)
+		return (1);
+	memset(&config, 0, sizeof(config));
+	memset(&request, 0, sizeof(request));
+	strlcpy(request.ifd_name, argv[1], sizeof(request.ifd_name));
+	request.ifd_cmd = 1;
+	request.ifd_len = sizeof(config);
+	request.ifd_data = &config;
+	if (ioctl(socket_fd, SIOCGDRVSPEC, &request) != 0)
+		return (1);
+	printf("capable=%u tx_type=%d rx_filter=%d flags=%u\n", config.capable,
+	    config.tx_type, config.rx_filter, config.flags);
+	request.ifd_len = sizeof(config) - 1;
+	errno = 0;
+	rejected = ioctl(socket_fd, SIOCGDRVSPEC, &request) != 0 && errno == EINVAL;
+	printf("short-length rejected: %s\n", rejected ? "yes" : "no");
+	close(socket_fd);
+	return (rejected ? 0 : 1);
+}
+EOF
+cc -O2 -Wall -Wextra -o "$BIN" "$SRC" || {
+	fail "compile failed"
+	echo "RESULT: $FAIL failure(s)"
+	exit 1
+}
 
 OUT=$("$BIN" "$IFACE" 2>&1)
 RC=$?
@@ -72,7 +137,7 @@ else
 fi
 
 gate "4. Clock sysctl consistency"
-NODE=$(sysctl -n dev.idpf.0.ptp_clock_ns 2>/dev/null)
+NODE=$(sysctl -n "dev.$DRIVER.$UNIT.ptp_clock_ns" 2>/dev/null)
 if [ "${CAPABLE:-0}" = "0" ]; then
 	[ -z "$NODE" ] && pass "no clock node published, matching capable=0" \
 		|| fail "clock node present though PTP was declined"

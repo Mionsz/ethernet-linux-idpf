@@ -16,13 +16,13 @@
 # Usage: [FBSD_HOST=user@host] fbsd-unit-build.sh [error-lines-to-show]
 set -e
 
-HOST=${FBSD_HOST:-freebsd}
+HOST=${FBSD_HOST:-10.102.18.118}
 LINES=${1:-40}
 LOCAL_SRC=/opt/ethernet-linux-idpf/idpf
-REMOTE_DIR=/tmp/idpftest
+REMOTE_DIR=${IDPF_REMOTE_DIR:-/tmp/idpftest}
 
 cd "$LOCAL_SRC"
-tar -czf /tmp/idpf-test.tgz src test
+tar -czf /tmp/idpf-test.tgz src shared test
 scp -q -o BatchMode=yes /tmp/idpf-test.tgz "$HOST:/tmp/"
 
 ssh -o BatchMode=yes "$HOST" "
@@ -42,4 +42,5 @@ ssh -o BatchMode=yes "$HOST" "
 		    sed 's/[0-9][0-9]*/N/g' | sort -u | head -25
 		exit 1
 	fi
+	exit \$rc
 "

@@ -9,14 +9,20 @@
 #
 # Negative cases are assertions too: rejecting a bad MTU or a malformed
 # private ioctl is required behaviour, not an error.
+# shellcheck disable=SC2015
 
 set -u
 
 IFACE="${1:-idpf0}"
 KMOD="${2:-/tmp/idpfbuild/src/if_idpf.ko}"
 TESTIP="${TESTIP:-192.168.211.1/24}"
+TESTPEER="${TESTPEER:-192.168.211.99}"
+VLANPEER="${VLANPEER:-192.168.212.99}"
 VLANID="${VLANID:-101}"
 STRESS="${STRESS:-20}"
+DRIVER=${IFACE%%[0-9]*}
+UNIT=${IFACE#"$DRIVER"}
+[ -n "$UNIT" ] || UNIT=0
 
 PASS=0
 FAIL=0
@@ -25,7 +31,16 @@ pass()    { echo "[PASS] $*"; PASS=$((PASS+1)); }
 fail()    { echo "[FAIL] $*"; FAIL=$((FAIL+1)); }
 skip()    { echo "[SKIP] $*"; }
 
+[ "$(uname -s)" = "FreeBSD" ] || { echo "RESULT: SKIP - FreeBSD only"; exit 0; }
 [ "$(id -u)" -eq 0 ] || { echo "must run as root" >&2; exit 1; }
+case "${IDPF_ALLOW_HARDWARE:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_ALLOW_HARDWARE=1 to authorize hardware tests"; exit 2 ;;
+esac
+case "${IDPF_CONSOLE_CONFIRMED:-}" in
+1|yes|true) ;;
+*) echo "RESULT: SKIP - set IDPF_CONSOLE_CONFIRMED=1 after verifying console access"; exit 2 ;;
+esac
 
 if ! ifconfig "$IFACE" >/dev/null 2>&1; then
 	kldload "$KMOD" 2>/dev/null && sleep 8
@@ -59,19 +74,31 @@ if ifconfig "$VIF" create vlan "$VLANID" vlandev "$IFACE" 2>/dev/null; then
 	fi
 	ifconfig "$VIF" inet 192.168.212.1/24 up 2>/dev/null
 	sleep 1
-	ifconfig "$VIF" | grep -q "UP" && pass "vlan interface came up" \
-		|| fail "vlan interface did not come up"
+	if ifconfig "$VIF" | grep -q "UP"; then
+		pass "vlan interface came up"
+	else
+		fail "vlan interface did not come up"
+	fi
 
-	ping -c 2 -t 2 192.168.212.99 >/dev/null 2>&1
+	ping -c 2 -t 2 "$VLANPEER" >/dev/null 2>&1
 	VERR=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
-	[ "${VERR:-0}" -eq 0 ] && pass "no interface errors after vlan traffic" \
-		|| fail "interface reports $VERR errors after vlan traffic"
+	if [ "${VERR:-0}" -eq 0 ]; then
+		pass "no interface errors after vlan traffic"
+	else
+		fail "interface reports $VERR errors after vlan traffic"
+	fi
 
-	ifconfig "$VIF" destroy 2>/dev/null && pass "vlan interface destroyed" \
-		|| fail "vlan interface destroy failed"
+	if ifconfig "$VIF" destroy 2>/dev/null; then
+		pass "vlan interface destroyed"
+	else
+		fail "vlan interface destroy failed"
+	fi
 	sleep 1
-	alive && pass "parent survived vlan teardown" \
-		|| fail "parent broken after vlan teardown"
+	if alive; then
+		pass "parent survived vlan teardown"
+	else
+		fail "parent broken after vlan teardown"
+	fi
 else
 	skip "cannot create vlan interface"
 fi
@@ -101,13 +128,12 @@ alive && pass "interface healthy after allmulti toggle" \
 
 # ------------------------------------------------------------- multicast
 section "3. Multicast filters (ifdi_multi_set)"
-BEFORE=$(ifconfig "$IFACE" | grep -c "inet6\|ether")
 # Enabling IPv6 makes the stack join the solicited-node groups.
 ifconfig "$IFACE" inet6 -ifdisabled 2>/dev/null
 sleep 2
-GROUPS=$(ifmcstat -i "$IFACE" 2>/dev/null | grep -c "group")
-if [ "${GROUPS:-0}" -gt 0 ]; then
-	pass "interface joined $GROUPS multicast group(s)"
+MCAST_GROUPS=$(ifmcstat -i "$IFACE" 2>/dev/null | grep -c "group")
+if [ "${MCAST_GROUPS:-0}" -gt 0 ]; then
+	pass "interface joined $MCAST_GROUPS multicast group(s)"
 else
 	skip "no multicast groups reported by ifmcstat"
 fi
@@ -146,7 +172,7 @@ done
 NOW=$(ifconfig "$IFACE" | awk '/options=/{print $1}')
 [ "$NOW" = "$ORIG" ] && pass "capabilities restored to $ORIG" \
 	|| fail "capabilities are $NOW, expected $ORIG"
-ping -c 3 -t 2 192.168.211.99 >/dev/null 2>&1
+ping -c 3 -t 2 "$TESTPEER" >/dev/null 2>&1
 CERR=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 [ "${CERR:-0}" -eq 0 ] && pass "no errors after capability toggling" \
 	|| fail "$CERR errors after capability toggling"
@@ -240,16 +266,16 @@ fi
 
 # ------------------------------------------------------------ statistics
 section "8. Hardware statistics"
-NODES=$(sysctl dev.idpf.0.stats 2>/dev/null | wc -l | tr -d ' ')
+NODES=$(sysctl "dev.$DRIVER.$UNIT.stats" 2>/dev/null | wc -l | tr -d ' ')
 if [ "${NODES:-0}" -ge 12 ]; then
 	pass "$NODES statistics nodes published"
 else
 	fail "expected >=12 statistics nodes, found ${NODES:-0}"
 fi
-TX0=$(sysctl -n dev.idpf.0.stats.tx_bytes 2>/dev/null || echo 0)
-ping -c 5 -i 0.2 -t 2 192.168.211.99 >/dev/null 2>&1
+TX0=$(sysctl -n "dev.$DRIVER.$UNIT.stats.tx_bytes" 2>/dev/null || echo 0)
+ping -c 5 -i 0.2 -t 2 "$TESTPEER" >/dev/null 2>&1
 sleep 2
-TX1=$(sysctl -n dev.idpf.0.stats.tx_bytes 2>/dev/null || echo 0)
+TX1=$(sysctl -n "dev.$DRIVER.$UNIT.stats.tx_bytes" 2>/dev/null || echo 0)
 if [ "${TX1:-0}" -gt "${TX0:-0}" ]; then
 	pass "tx_bytes advanced $TX0 -> $TX1 on the wire"
 else
@@ -290,7 +316,7 @@ alive && pass "$STRESS promisc flaps survived" || fail "interface broken after p
 if [ "$BROKE" -eq 0 ]; then
 	ifconfig "$IFACE" up 2>/dev/null
 	sleep 2
-	ping -c 3 -t 2 192.168.211.99 >/dev/null 2>&1
+	ping -c 3 -t 2 "$TESTPEER" >/dev/null 2>&1
 	ERRS=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 	[ "${ERRS:-0}" -eq 0 ] && pass "no errors after stress" \
 		|| fail "$ERRS errors after stress"
@@ -302,7 +328,7 @@ section "10. Teardown under load"
 ifconfig "$IFACE" up 2>/dev/null
 sleep 1
 ( i=0; while [ $i -lt 2000 ]; do
-	ping -c 1 -t 1 192.168.211.99 >/dev/null 2>&1
+	ping -c 1 -t 1 "$TESTPEER" >/dev/null 2>&1
 	i=$((i+1))
   done ) &
 LOADPID=$!
@@ -328,7 +354,7 @@ if kldload "$KMOD" 2>/dev/null; then
 		ifconfig "$IFACE" inet "$TESTIP" alias 2>/dev/null
 		ifconfig "$IFACE" up
 		sleep 3
-		ping -c 3 -t 2 192.168.211.99 >/dev/null 2>&1
+		ping -c 3 -t 2 "$TESTPEER" >/dev/null 2>&1
 		RERR=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 		[ "${RERR:-0}" -eq 0 ] && pass "datapath clean after reload" \
 			|| fail "$RERR errors after reload"

@@ -129,7 +129,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -201,14 +200,6 @@ def sha256_bytes(data: bytes) -> str:
 
 def sha256_text(text: str) -> str:
     return sha256_bytes(text.encode("utf-8"))
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def load_json(path: Path, default: Any = None) -> Any:
@@ -950,13 +941,13 @@ def validate_result(stage: str, obj: dict[str, Any], identity: str, baseline_fin
     warnings: list[str] = []
     props = schema.get("properties") or {}
     required = schema.get("required") or []
-    type_map = {"string": str, "array": list, "object": dict, "boolean": bool, "integer": int, "number": (int, float)}
+    type_map: dict[str, type | tuple[type, ...]] = {"string": str, "array": list, "object": dict, "boolean": bool, "integer": int, "number": (int, float)}
     for key in required:
         if key not in obj:
             errors.append(f"missing required key: {key}")
             continue
         spec = props.get(key) or {}
-        expected_name = spec.get("type")
+        expected_name = str(spec.get("type") or "")
         expected = type_map.get(expected_name)
         if expected is not None and not isinstance(obj[key], expected):
             errors.append(f"key {key!r}: expected {expected_name}, got {type(obj[key]).__name__}")
@@ -1078,6 +1069,9 @@ def spec_fingerprint(root: Path) -> str:
 def _spec_fingerprint_uncached(root: Path) -> str:
     d = root / "orchestration" / "specifications"
     clauses = d / "clauses.jsonl"
+    # target_access is deliberately excluded: an endpoint is execution
+    # infrastructure, not analysis input. Adding a test host must not invalidate
+    # completed analysis. Prompt drift is still caught by prompt_sha256.
     payload = {
         "clauses": _hash_jsonl_projection(clauses, ["spec_clause_id", "text_sha256", "source_version", "authority_class"]) if clauses.exists() else "no-specs",
         "mcp_and_tools": _hash_jsonl_projection(d / "mcp_and_tools.jsonl", ["capability_id", "path", "version", "authority_class", "sha256"]),
@@ -1992,20 +1986,24 @@ def ingest_spec_manifest(root: Path, manifest_path: Path) -> dict[str, Any]:
         docs.append(doc)
     tools = normalize_capabilities(manifest.get("mcp-and-tools-list") or manifest.get("mcp_and_tools_list") or [], base, "tool")
     skills = normalize_capabilities(manifest.get("skills") or [], base, "skill")
+    target_os = str((load_json(root / "manifest" / "project.json", {}) or {}).get("target_os") or "")
+    endpoints = normalize_endpoints(manifest.get("target-access") or manifest.get("target_access") or [], target_os)
     sd = root / "orchestration" / "specifications"
     atomic_write_json(sd / "manifest.json", {
         "documents": docs, "ingested_utc": now_iso(), "source_manifest": str(manifest_path),
-        "mcp_and_tools_list": tools, "skills": skills,
+        "mcp_and_tools_list": tools, "skills": skills, "target_access": endpoints,
     })
     atomic_write_jsonl(sd / "clauses.jsonl", clauses)
     atomic_write_jsonl(sd / "mcp_and_tools.jsonl", tools)
     atomic_write_jsonl(sd / "skills.jsonl", skills)
+    atomic_write_jsonl(sd / "target_access.jsonl", endpoints)
     atomic_write_json(sd / "summary.json", {
         "documents": len(docs), "clauses": len(clauses),
-        "mcp_and_tools": len(tools), "skills": len(skills),
+        "mcp_and_tools": len(tools), "skills": len(skills), "target_access": len(endpoints),
     })
     invalidate_derived_caches()
-    return {"documents": len(docs), "clauses": len(clauses), "mcp_and_tools": len(tools), "skills": len(skills)}
+    return {"documents": len(docs), "clauses": len(clauses), "mcp_and_tools": len(tools),
+            "skills": len(skills), "target_access": len(endpoints)}
 
 
 def normalize_capabilities(entries: Any, base: Path, kind: str) -> list[dict[str, Any]]:
@@ -2034,6 +2032,7 @@ def normalize_capabilities(entries: Any, base: Path, kind: str) -> list[dict[str
             "document_id": local,
             "title": str(entry.get("title") or local),
             "description": str(entry.get("description") or ""),
+            "notes": str(entry.get("notes") or ""),
             "version": entry.get("version"),
             "authority_class": str(entry.get("authority_class") or "A5"),
             "path": raw_path,
@@ -2056,6 +2055,42 @@ def normalize_capabilities(entries: Any, base: Path, kind: str) -> list[dict[str
     return rows
 
 
+def normalize_endpoints(entries: Any, default_target_os: str = "") -> list[dict[str, Any]]:
+    """Normalize target-access entries into executable endpoint records.
+
+    Each entry describes one command that reaches an environment matching the
+    porting target, so a work item can be built and tested where it will run.
+    """
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for idx, entry in enumerate(entries if isinstance(entries, list) else []):
+        if isinstance(entry, str):
+            entry = {"document_id": f"endpoint-{idx + 1}", "command": entry}
+        if not isinstance(entry, Mapping):
+            continue
+        command = str(entry.get("command") or entry.get("path") or "").strip()
+        if not command:
+            raise ValueError("every target-access entry requires a 'command'")
+        local = str(entry.get("document_id") or entry.get("id") or f"endpoint-{idx + 1}").strip()
+        endpoint_id = local if local.startswith("ENDPOINT::") else f"ENDPOINT::{_slug(local)}"
+        if endpoint_id in seen:
+            raise ValueError(f"duplicate target-access endpoint id: {endpoint_id}")
+        seen.add(endpoint_id)
+        rows.append({
+            "endpoint_id": endpoint_id,
+            "document_id": local,
+            "title": str(entry.get("title") or local),
+            "command": command,
+            "target_os": str(entry.get("target_os") or default_target_os),
+            "version": entry.get("version"),
+            "authority_class": str(entry.get("authority_class") or "A5"),
+            "description": str(entry.get("description") or ""),
+            "notes": str(entry.get("notes") or ""),
+        })
+    rows.sort(key=lambda x: x["endpoint_id"])
+    return rows
+
+
 def load_spec_clauses(root: Path) -> list[dict[str, Any]]:
     return list(iter_jsonl(root / "orchestration" / "specifications" / "clauses.jsonl"))
 
@@ -2068,15 +2103,32 @@ def load_authorized_skills(root: Path) -> list[dict[str, Any]]:
     return list(iter_jsonl(root / "orchestration" / "specifications" / "skills.jsonl"))
 
 
+def load_target_endpoints(root: Path) -> list[dict[str, Any]]:
+    return list(iter_jsonl(root / "orchestration" / "specifications" / "target_access.jsonl"))
+
+
+def assign_target_endpoint(root: Path, stage: str, item: WorkItem,
+                           items: Sequence[WorkItem] | None = None) -> dict[str, Any] | None:
+    """Round-robin one endpoint per work item so parallel agents spread over the pool."""
+    endpoints = load_target_endpoints(root)
+    if not endpoints:
+        return None
+    order = [x.item_id for x in (items or [])]
+    position = order.index(item.item_id) if item.item_id in order else int(sha256_text(item.item_id)[:8], 16)
+    return endpoints[position % len(endpoints)]
+
+
+CAPABILITY_FIELDS = ("capability_id", "document_id", "title", "path", "selector",
+                     "version", "authority_class", "description", "notes")
+
+
 def capability_context(root: Path) -> dict[str, Any]:
     return {
         "authorized_mcp_and_tools": [
-            {k: x.get(k) for k in ("capability_id", "document_id", "title", "path", "selector", "version", "authority_class", "description")}
-            for x in load_authorized_tools(root)
+            {k: x.get(k) for k in CAPABILITY_FIELDS} for x in load_authorized_tools(root)
         ],
         "authorized_skills": [
-            {k: x.get(k) for k in ("capability_id", "document_id", "title", "path", "selector", "version", "authority_class", "description")}
-            for x in load_authorized_skills(root)
+            {k: x.get(k) for k in CAPABILITY_FIELDS} for x in load_authorized_skills(root)
         ],
     }
 
@@ -2089,6 +2141,90 @@ def add_capability_section(c: "PromptComposer", root: Path, limit: int = 20000) 
         "Authorized MCP servers, tools and skills — use only these capabilities for research and verification",
         "```json\n" + pretty(ctx, limit) + "\n```",
     )
+
+
+def header_inventory_context(root: Path, max_headers: int = 40) -> dict[str, Any] | None:
+    """Declarations found by the lexical header scan, including headers no TU compiled."""
+    coverage = load_json(root / "manifest" / "header_coverage.json", {}) or {}
+    if not coverage:
+        return None
+    rows = list(iter_jsonl(root / "kb" / "headers.jsonl"))
+    uncovered = set(coverage.get("not_covered_declaring_types") or [])
+    ranked = sorted(
+        rows,
+        key=lambda r: (r.get("path") not in uncovered,
+                       -(len(r.get("structs") or []) + len(r.get("unions") or []) + len(r.get("enums") or []))),
+    )[:max_headers]
+    return {
+        "totals": coverage.get("totals") or {},
+        "headers_total": coverage.get("headers_total"),
+        "headers_not_covered_by_any_translation_unit": coverage.get("not_covered") or [],
+        "type_declaring_headers_never_compiled": sorted(uncovered),
+        "headers": [
+            {
+                "path": r.get("path"),
+                "include_guard": r.get("include_guard"),
+                "compiled_by_a_translation_unit": r.get("extraction_covered"),
+                "structs": r.get("structs") or [],
+                "unions": r.get("unions") or [],
+                "enums": r.get("enums") or [],
+                "typedefs": r.get("typedefs") or [],
+                "kernel_includes": r.get("kernel_includes") or [],
+                "configuration_symbols": r.get("configuration_symbols") or [],
+            }
+            for r in ranked
+        ],
+    }
+
+
+def add_header_inventory_section(c: "PromptComposer", root: Path, limit: int = 30000) -> None:
+    ctx = header_inventory_context(root)
+    if not ctx:
+        return
+    c.add(
+        "Repository header inventory — lexical scan; headers marked compiled_by_a_translation_unit=false "
+        "were never seen by the compiler pass, so their declarations are absent from kb/",
+        "```json\n" + pretty(ctx, limit) + "\n```",
+    )
+
+
+def target_access_section(root: Path, stage: str, item: WorkItem,
+                          items: Sequence[WorkItem] | None = None) -> str:
+    """Markdown section granting this work item its assigned target-environment endpoint."""
+    stages = (DEFAULT_POLICY.get("target_access") or {}).get("prompt_stages")
+    if stages is not None and stage not in set(str(x) for x in stages):
+        return ""
+    assigned = assign_target_endpoint(root, stage, item, items)
+    if assigned is None:
+        return ""
+    pool = load_target_endpoints(root)
+    lines = [
+        "",
+        f"## Target system access — assigned to {item.identity or item.item_id}",
+        "",
+        "You may build and test on the target environment to verify this work item.",
+        "",
+        f"Assigned endpoint **{assigned['endpoint_id']}** (round-robin over {len(pool)} endpoint(s)):",
+        "",
+        "```bash",
+        assigned["command"],
+        "```",
+        "",
+        f"- target OS: {assigned['target_os'] or 'unspecified'}",
+    ]
+    if assigned["description"]:
+        lines.append(f"- purpose: {assigned['description']}")
+    if assigned["notes"]:
+        lines.append(f"- constraints: {assigned['notes']}")
+    lines += [
+        "",
+        "Rules: use only the endpoint assigned above, never another item's endpoint. Report the exact",
+        "commands you ran and their real output; never present an untested result as verified. Attaching",
+        "a driver to real hardware can wedge the host, so do not attempt it unless the endpoint notes",
+        "explicitly allow it.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 # ---- Evidence citation verification ----------------------------------------
@@ -2377,7 +2513,9 @@ def run_consistency_checks(root: Path, baseline: dict[str, Any], static: dict[st
         obj = load_valid_result(root, "methods", item, baseline)
         if not obj: continue
         runtime = obj.get("runtime") or {}
-        ctx = " ".join(str(x) for x in (runtime.get("execution_context") if isinstance(runtime.get("execution_context"), list) else [runtime.get("execution_context") or runtime.get("context") or ""])).lower()
+        exec_ctx = runtime.get("execution_context")
+        ctx_values = exec_ctx if isinstance(exec_ctx, list) else [exec_ctx or runtime.get("context") or ""]
+        ctx = " ".join(str(x) for x in ctx_values).lower()
         may_sleep = _as_bool(runtime.get("may_sleep"))
         if may_sleep is True and any(x in ctx for x in ("hardirq", "interrupt", "softirq", "napi", "poll non-sleep")):
             findings.append({"finding_id": "CONS-"+sha256_text(str(item.identity)+"sleep")[:12], "severity": "HIGH", "kind": "sleep_context_conflict", "methods": [item.identity], "message": f"{item.identity}: marked may_sleep in non-sleeping context {ctx!r}"})
@@ -2428,7 +2566,7 @@ def run_consistency_checks(root: Path, baseline: dict[str, Any], static: dict[st
 
     # De-duplicate findings produced by multiple traversal roots.
     uniq = {x["finding_id"]: x for x in findings}
-    findings = sorted(uniq.values(), key=lambda x: ({"HIGH":0,"MEDIUM":1,"LOW":2}.get(x.get("severity"), 9), x["finding_id"]))
+    findings = sorted(uniq.values(), key=lambda x: ({"HIGH":0,"MEDIUM":1,"LOW":2}.get(str(x.get("severity") or ""), 9), x["finding_id"]))
     report = {"generated_utc": now_iso(), "findings": findings, "counts": dict(Counter(x["severity"] for x in findings))}
     atomic_write_json(root / "orchestration" / "reports" / "consistency.json", report)
     return report
@@ -2611,8 +2749,14 @@ def project_name(root: Path) -> str:
     return str((load_json(root / "manifest" / "project.json", {}) or {}).get("project_name") or "")
 
 
+def require_source_prompt(item: WorkItem) -> str:
+    if item.source_prompt is None:
+        raise ValueError(f"{item.stage} item {item.item_id!r} has no source prompt file; rerun the context builder for it")
+    return item.source_prompt
+
+
 def render_architecture(root: Path, item: WorkItem, baseline: dict[str, Any], policy: dict[str, Any]) -> str:
-    base = Path(item.source_prompt).read_text(encoding="utf-8", errors="replace")
+    base = Path(require_source_prompt(item)).read_text(encoding="utf-8", errors="replace")
     health = extraction_health(root)
     c = PromptComposer(int(policy["prompt_budgets"]["architecture"]))
     c.add("Base architecture review", base)
@@ -2623,12 +2767,13 @@ def render_architecture(root: Path, item: WorkItem, baseline: dict[str, Any], po
         c.add("Ingested specification clause index — use stable IDs in feature_model",
               "```json\n" + bounded_records([{k: x.get(k) for k in ("spec_clause_id","document_id","title","source_version","authority_class")} for x in clauses], 40000) + "\n```")
     c.add("Orchestration contract", contract_text("architecture", "architecture", baseline["fingerprint"], project_name(root)))
+    add_header_inventory_section(c, root)
     add_capability_section(c, root)
     return c.render()
 
 
 def render_method(root: Path, item: WorkItem, baseline: dict[str, Any], policy: dict[str, Any], static: dict[str, list[WorkItem]]) -> str:
-    base = Path(item.source_prompt).read_text(encoding="utf-8", errors="replace")
+    base = Path(require_source_prompt(item)).read_text(encoding="utf-8", errors="replace")
     arch = load_valid_result(root, "architecture", static["architecture"][0], baseline)
     c = PromptComposer(int(policy["prompt_budgets"]["methods"]))
     c.add("Base Function Analysis Record prompt", base)
@@ -2694,6 +2839,7 @@ def render_target(root: Path, item: WorkItem, baseline: dict[str, Any], policy: 
     c.add("Request record template", "```json\n" + template_path(TEMPLATES, "record.method_port_request").read_text(encoding="utf-8").strip() + "\n```")
     c.add("Risk record template", "```json\n" + template_path(TEMPLATES, "record.method_risk").read_text(encoding="utf-8").strip() + "\n```")
     c.add("Orchestration contract", contract_text("target", item.identity or item.item_id, baseline["fingerprint"], project_name(root)))
+    add_header_inventory_section(c, root)
     add_capability_section(c, root)
     return c.render()
 
@@ -2734,7 +2880,7 @@ def render_evidence(root: Path, item: WorkItem, baseline: dict[str, Any], policy
 
 
 def render_file(root: Path, item: WorkItem, baseline: dict[str, Any], policy: dict[str, Any], static: dict[str, list[WorkItem]], evidence_rows: Sequence[dict[str, Any]]) -> str:
-    base = Path(item.source_prompt).read_text(encoding="utf-8", errors="replace")
+    base = Path(require_source_prompt(item)).read_text(encoding="utf-8", errors="replace")
     fkeys = set(item.metadata.get("function_keys") or [])
     methods = []
     for m in static["methods"]:
@@ -2773,7 +2919,7 @@ def render_file(root: Path, item: WorkItem, baseline: dict[str, Any], policy: di
 
 
 def render_subsystem(root: Path, item: WorkItem, baseline: dict[str, Any], policy: dict[str, Any], static: dict[str, list[WorkItem]], evidence_rows: Sequence[dict[str, Any]]) -> str:
-    base = Path(item.source_prompt).read_text(encoding="utf-8", errors="replace")
+    base = Path(require_source_prompt(item)).read_text(encoding="utf-8", errors="replace")
     fkeys = set(item.metadata.get("function_keys") or [])
     files = set(item.metadata.get("files") or [])
     arch = load_valid_result(root, "architecture", static["architecture"][0], baseline)
@@ -2830,7 +2976,7 @@ def render_subsystem(root: Path, item: WorkItem, baseline: dict[str, Any], polic
 
 
 def render_final(root: Path, item: WorkItem, baseline: dict[str, Any], policy: dict[str, Any], static: dict[str, list[WorkItem]], evidence_rows: Sequence[dict[str, Any]]) -> str:
-    base = Path(item.source_prompt).read_text(encoding="utf-8", errors="replace")
+    base = Path(require_source_prompt(item)).read_text(encoding="utf-8", errors="replace")
     arch = load_valid_result(root, "architecture", static["architecture"][0], baseline)
     subs = []
     for s in static["subsystems"]:
@@ -3168,6 +3314,7 @@ def render_item(root: Path, stage: str, item: WorkItem, baseline: dict[str, Any]
         text = render_final(root, item, baseline, policy, static, evidence_rows)
     else:
         raise ValueError(stage)
+    text += target_access_section(root, stage, item, get_items_for_stage(stage, static, evidence_rows, root))
     p = enriched_prompt_path(root, stage, item.item_id)
     atomic_write_text(p, text)
     dep_fp = dependency_fingerprint(root, stage, item, baseline, static, evidence_rows)
@@ -4030,7 +4177,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     p = sub.add_parser("ingest-spec", help="Ingest specification manifest and create stable clause IDs")
     root_arg(p)
-    p.add_argument("--spec-manifest", required=True, help="Specification manifest to ingest")
+    p.add_argument("--spec-manifest", default=str(Path(__file__).resolve().parent / "templates" / "orchestrator" / "records" / "spec_manifest.example.json"),
+                   help="Specification manifest to ingest (documents, mcp-and-tools-list, skills, target-access)")
 
     p = sub.add_parser("verify-evidence", help="Verify evidence citations and score source authority")
     root_arg(p)

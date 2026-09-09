@@ -10,8 +10,18 @@
 # Usage: hw-cleanup.sh [device]
 DEV=${1:-idpf0}
 MOD=if_idpf
+PCI_BUS=${PCI_BUS:-pci16}
 
 log() { echo ">>> $*"; logger -t idpfcleanup "$*" 2>/dev/null; }
+
+[ "$(uname -s)" = "FreeBSD" ] || {
+	echo "RESULT: SKIP - FreeBSD only"
+	exit 0
+}
+[ "$(id -u)" -eq 0 ] || {
+	echo "must run as root" >&2
+	exit 1
+}
 
 if ! kldstat -q -n "$MOD"; then
 	log "module not loaded, nothing to do"
@@ -33,5 +43,5 @@ else
 fi
 
 # Leave the device probeable again for the next run.
-devctl rescan pci16 >/dev/null 2>&1
+devctl rescan "$PCI_BUS" >/dev/null 2>&1
 exit 0

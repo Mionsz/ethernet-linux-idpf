@@ -114,22 +114,22 @@
     "providers": {
       "copilot": {
         "api_base": "https://api.githubcopilot.com",
-        "max_output_tokens": 16000,
-        "model": "gpt-4.1",
-        "temperature": 0,
+        "max_output_tokens": 256000,
+        "model": "claude-opus-5",
+        "temperature": 0.1,
         "token_url": "https://api.github.com/copilot_internal/v2/token"
       }
     }
   },
   "policy_version": 1,
   "prompt_budgets": {
-    "architecture": 160000,
-    "evidence": 90000,
-    "files": 200000,
-    "final": 300000,
-    "methods": 120000,
-    "subsystems": 220000,
-    "target": 140000
+    "architecture": 1024000,
+    "evidence": 1024000,
+    "files": 1024000,
+    "final": 1024000,
+    "methods": 1024000,
+    "subsystems": 1024000,
+    "target": 1024000
   },
   "registries": {
     "final_project_request_decisions": [
@@ -179,6 +179,17 @@
     "timeout_seconds": 1800
   },
   "schema_version": "3.0",
+  "target_access": {
+    "_comment": "Stages whose prompts carry an assigned target-environment endpoint. Removing a stage keeps its already-accepted results valid, because the rendered prompt stops changing.",
+    "prompt_stages": [
+      "architecture",
+      "target",
+      "evidence",
+      "files",
+      "subsystems",
+      "final"
+    ]
+  },
   "traceability": {
     "block_final_missing_required_tests": false,
     "require_test_feature_link": true,

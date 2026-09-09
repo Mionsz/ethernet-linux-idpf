@@ -79,17 +79,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import textwrap
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional, cast
+from typing import Any, Iterable, Iterator, cast
 
 from nic_port_manifest import (
-    ManifestError, get_path, load_manifest, load_semantic_rules, load_template_index, load_policy_from_manifest,
+    ManifestError, get_path, load_manifest, load_semantic_rules, load_template_index,
     load_api_catalog, load_linux_specific_rules, load_include_classification, load_portability_scoring,
     load_tooling_normalization, load_report_layout, load_context_layout, load_output_catalog, load_framework_model, load_extraction_runtime,
-    manifest_ref, render_template, template_path, validate_manifest_basics, write_output_manifest, sha256_file,
+    render_template, template_path, validate_manifest_basics, write_output_manifest, sha256_file,
 )
 from nic_port_derived_indexes import build_indexes
 
@@ -264,14 +263,6 @@ def rel(path: str | Path, root: Path) -> str:
         return str(Path(path).resolve().relative_to(root.resolve()))
     except Exception:
         return str(Path(path))
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def sha256_text(text: str) -> str:
@@ -2508,7 +2499,6 @@ def build_extraction_quality(compile_units: list[CompileUnit], results: list[TUR
     if bool(cfg.get("require_nonempty_local_function_set_for_source_translation_units", True)):
         local_empty = []
         for r in results:
-            tu_rel = Path(r.tu.file).name if not r.tu.file else None
             # FunctionRecord.file is project-relative; compare by source basename as
             # a fallback because the quality function intentionally has no source-root argument.
             local_count = sum(1 for f in r.functions if Path(f.file).name == Path(r.tu.file).name)

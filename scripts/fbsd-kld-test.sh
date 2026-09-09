@@ -13,8 +13,24 @@
 # Usage: fbsd-kld-test.sh [path-to-remote-build-dir]
 set -e
 
-REMOTE_DIR=${1:-/tmp/idpfbuild}
+HOST=${FBSD_HOST:-10.102.18.118}
+REMOTE_DIR=${1:-${IDPF_REMOTE_DIR:-/tmp/idpfbuild}}
 REMOTE_SCRIPT=/tmp/idpf-kld-test.sh
+
+case "${IDPF_ALLOW_HARDWARE:-}" in
+1|yes|true) ;;
+*)
+	echo "RESULT: SKIP - set IDPF_ALLOW_HARDWARE=1 before loading a module"
+	exit 2
+	;;
+esac
+case "${IDPF_CONSOLE_CONFIRMED:-}" in
+1|yes|true) ;;
+*)
+	echo "RESULT: SKIP - set IDPF_CONSOLE_CONFIRMED=1 after verifying console access"
+	exit 2
+	;;
+esac
 
 cat > /tmp/idpf-kld-test.sh.local <<'REMOTE_EOF'
 #!/bin/sh
@@ -120,5 +136,12 @@ echo "KLD LIFECYCLE: FAIL (cycle failures=$total_fail negative=$neg_fail)"
 exit 1
 REMOTE_EOF
 
-scp -q -o BatchMode=yes /tmp/idpf-kld-test.sh.local "freebsd:$REMOTE_SCRIPT"
-ssh -o BatchMode=yes freebsd "chmod +x $REMOTE_SCRIPT && cd $REMOTE_DIR/src && $REMOTE_SCRIPT"
+if [ "$HOST" = local ]; then
+	cp /tmp/idpf-kld-test.sh.local "$REMOTE_SCRIPT"
+	chmod +x "$REMOTE_SCRIPT"
+	cd "$REMOTE_DIR/src"
+	exec "$REMOTE_SCRIPT"
+fi
+
+scp -q -o BatchMode=yes /tmp/idpf-kld-test.sh.local "$HOST:$REMOTE_SCRIPT"
+ssh -o BatchMode=yes "$HOST" "chmod +x $REMOTE_SCRIPT && cd $REMOTE_DIR/src && $REMOTE_SCRIPT"

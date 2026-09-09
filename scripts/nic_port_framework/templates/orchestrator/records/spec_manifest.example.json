@@ -5,140 +5,180 @@
       "title": "MCP and Tools List that are allowed to be used by model",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/.vscode/mcp.json"
+      "path": "/opt/ethernet-linux-idpf/.vscode/mcp.json",
+      "description": "VS Code MCP server registry for this workspace.",
+      "notes": "Authoritative list of MCP servers the agent may call."
     },
     {
       "document_id": "idpf_osdep_h",
       "title": "idpf_osdep_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/idpf_osdep.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/idpf_osdep.h",
+      "description": "OSAL facade: os_* macros the ported driver calls.",
+      "notes": "Mandatory reading before proposing any OSAL substitution."
     },
     {
       "document_id": "osal_log_h",
       "title": "osal_log_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_log.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_log.h",
+      "description": "OSAL log interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_port_h",
       "title": "osal_port_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_port.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_port.h",
+      "description": "OSAL port interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_atomic_h",
       "title": "osal_atomic_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_atomic.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_atomic.h",
+      "description": "OSAL atomic interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
-     "document_id": "osal_mem_h",
-     "title": "osal_mem_h",
-     "version": "1.0.0",
-     "authority_class": "A5",
-     "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_mem.h"
+      "document_id": "osal_mem_h",
+      "title": "osal_mem_h",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_mem.h",
+      "description": "OSAL mem interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_time_h",
       "title": "osal_time_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_time.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_time.h",
+      "description": "OSAL time interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_dma_h",
       "title": "osal_dma_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_dma.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_dma.h",
+      "description": "OSAL dma interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_mmio_h",
       "title": "osal_mmio_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_mmio.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_mmio.h",
+      "description": "OSAL mmio interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_types_h",
       "title": "osal_types_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_types.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_types.h",
+      "description": "OSAL types interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_irq_h",
       "title": "osal_irq_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_irq.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_irq.h",
+      "description": "OSAL irq interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_netdev_h",
       "title": "osal_netdev_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_netdev.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_netdev.h",
+      "description": "OSAL netdev interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_work_h",
       "title": "osal_work_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_work.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_work.h",
+      "description": "OSAL work interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_lock_h",
       "title": "osal_lock_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_lock.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_lock.h",
+      "description": "OSAL lock interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "osal_pci_h",
       "title": "osal_pci_h",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_pci.h"
+      "path": "/opt/ethernet-linux-idpf/scripts/nic_port_framework/osal/osal_pci.h",
+      "description": "OSAL pci interface: nic_os_* functions and types.",
+      "notes": "Target-side abstraction; do not assume Linux semantics."
     },
     {
       "document_id": "VIRTCHNL2",
       "title": "VIRTCHNL2 Protocol Specification",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/virtchnl.md"
+      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/virtchnl.md",
+      "description": "VIRTCHNL2 control-plane message protocol.",
+      "notes": "Hardware/firmware contract; identical on both operating systems."
     },
     {
       "document_id": "idpf_specification",
       "title": "IDPF Protocol Specification",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/root/drivers.ethernet.freebsd.common/.github/mgv_freebsd_idpf_speckit_v2/idpf_specification.md"
+      "path": "/root/drivers.ethernet.freebsd.common/.github/mgv_freebsd_idpf_speckit_v2/idpf_specification.md",
+      "description": "IDPF device and driver specification.",
+      "notes": "Primary source for device behaviour claims."
     },
     {
       "document_id": "freebsd_developers_handbook",
       "title": "FreeBSD Developers Handbook",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/freebsd_developers-handbook_en.pdf.md"
+      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/freebsd_developers-handbook_en.pdf.md",
+      "description": "FreeBSD Developers Handbook.",
+      "notes": "Use for kernel programming idioms, not for driver API contracts."
     },
     {
       "document_id": "freebsd-architecture-handbook",
       "title": "FreeBSD Architecture Handbook",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/FreeBSD-Architecture-Handbook-arch-handbook_en.pdf.md"
+      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/FreeBSD-Architecture-Handbook-arch-handbook_en.pdf.md",
+      "description": "FreeBSD Architecture Handbook.",
+      "notes": "Use for subsystem architecture: newbus, busdma, locking."
     },
     {
       "document_id": "freebsd-handbook",
       "title": "FreeBSD Handbook",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/freebsd-handbook.pdf.md"
+      "path": "/root/drivers.ethernet.freebsd.common/scripts/mcp/runtime/uploads/freebsd-handbook.pdf.md",
+      "description": "FreeBSD Handbook.",
+      "notes": "Operational reference; lowest authority of the three handbooks."
     }
   ],
   "mcp-and-tools-list": [
@@ -147,49 +187,63 @@
       "title": "mcp:gitnexus",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "gitnexus/*"
+      "path": "gitnexus/*",
+      "description": "Code graph: symbols, callers, impact analysis.",
+      "notes": "Prefer over grep for call-graph questions."
     },
     {
       "document_id": "gitnexus-http",
       "title": "mcp:gitnexus-http",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "gitnexus-http/*"
+      "path": "gitnexus-http/*",
+      "description": "Code graph over HTTP transport.",
+      "notes": "Same graph as gitnexus; use whichever is reachable."
     },
     {
       "document_id": "wiki-jira-mcp",
       "title": "mcp:wiki-jira-mcp",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "confluence*"
+      "path": "confluence*",
+      "description": "Confluence/Jira access for internal documentation.",
+      "notes": "Internal sources are A3 at best; cite page and URL."
     },
     {
       "document_id": "playwright",
       "title": "mcp:playwright",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "browser_*"
+      "path": "browser_*",
+      "description": "Headless browser for fetching public documentation.",
+      "notes": "Read-only browsing; never submit forms or credentials."
     },
     {
       "document_id": "github",
       "title": "mcp:github",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "github/*"
+      "path": "github/*",
+      "description": "GitHub repositories, issues and pull requests.",
+      "notes": "Use for upstream Linux/FreeBSD source verification."
     },
     {
       "document_id": "mcp-co-design",
       "title": "mcp:Co-Design",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "codesign-*"
+      "path": "codesign-*",
+      "description": "Intel Co-Design specs, wikis and IP code.",
+      "notes": "Internal design sources; cite the exact document."
     },
     {
       "document_id": "doc-search-mcp",
       "title": "mcp:doc-search-mcp",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "doc-search/*"
+      "path": "doc-search/*",
+      "description": "Semantic search over indexed PDF/Markdown specs.",
+      "notes": "Fastest path to a clause in the ingested specifications."
     }
   ],
   "skills": [
@@ -198,25 +252,102 @@
       "title": "skill:nic-porting-guide-references",
       "version": "1.0.0",
       "authority_class": "A5",
-      "path": "/root/.claude/skills/nic-porting-guide-references/SKILL.md"
+      "path": "/root/.claude/skills/nic-porting-guide-references/SKILL.md",
+      "description": "Nine-volume Linux-to-FreeBSD NIC porting reference.",
+      "notes": "Primary methodology source for target design decisions."
     },
-    {"document_id": "junit-test-converter", "title": "junit-test-converter",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/junit-test-converter/SKILL.md"},
-    {"document_id": "karpathy-guidelines", "title": "karpathy-guidelines",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/karpathy-guidelines/SKILL.md"},
-    {"document_id": "gitnexus-cli", "title": "gitnexus-cli",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-cli/SKILL.md"},
-    {"document_id": "gitnexus-debugging", "title": "gitnexus-debugging",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-debugging/SKILL.md"},
-    {"document_id": "gitnexus-exploring", "title": "gitnexus-exploring",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-exploring/SKILL.md"},
-    {"document_id": "gitnexus-guide", "title": "gitnexus-guide",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-guide/SKILL.md"},
-    {"document_id": "gitnexus-impact-analysis", "title": "gitnexus-impact-analysis",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-impact-analysis/SKILL.md"},
-    {"document_id": "gitnexus-mcp", "title": "gitnexus-mcp",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-mcp/SKILL.md"},
-    {"document_id": "gitnexus-refactoring", "title": "gitnexus-refactoring",
-    "version": "1.0.0", "authority_class": "A5", "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-refactoring/SKILL.md"}
+    {
+      "document_id": "junit-test-converter",
+      "title": "junit-test-converter",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/junit-test-converter/SKILL.md",
+      "description": "Converts proprietary test logs to JUnit XML.",
+      "notes": "Use when wiring target test output into CI."
+    },
+    {
+      "document_id": "karpathy-guidelines",
+      "title": "karpathy-guidelines",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/karpathy-guidelines/SKILL.md",
+      "description": "Guardrails against overcomplicated or speculative changes.",
+      "notes": "Apply to every design proposal."
+    },
+    {
+      "document_id": "gitnexus-cli",
+      "title": "gitnexus-cli",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-cli/SKILL.md",
+      "description": "GitNexus workflow guidance: cli.",
+      "notes": "Use with the gitnexus MCP tools."
+    },
+    {
+      "document_id": "gitnexus-debugging",
+      "title": "gitnexus-debugging",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-debugging/SKILL.md",
+      "description": "GitNexus workflow guidance: debugging.",
+      "notes": "Use with the gitnexus MCP tools."
+    },
+    {
+      "document_id": "gitnexus-exploring",
+      "title": "gitnexus-exploring",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-exploring/SKILL.md",
+      "description": "GitNexus workflow guidance: exploring.",
+      "notes": "Use with the gitnexus MCP tools."
+    },
+    {
+      "document_id": "gitnexus-guide",
+      "title": "gitnexus-guide",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-guide/SKILL.md",
+      "description": "GitNexus workflow guidance: guide.",
+      "notes": "Use with the gitnexus MCP tools."
+    },
+    {
+      "document_id": "gitnexus-impact-analysis",
+      "title": "gitnexus-impact-analysis",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-impact-analysis/SKILL.md",
+      "description": "GitNexus workflow guidance: impact analysis.",
+      "notes": "Use with the gitnexus MCP tools."
+    },
+    {
+      "document_id": "gitnexus-mcp",
+      "title": "gitnexus-mcp",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-mcp/SKILL.md",
+      "description": "GitNexus workflow guidance: mcp.",
+      "notes": "Use with the gitnexus MCP tools."
+    },
+    {
+      "document_id": "gitnexus-refactoring",
+      "title": "gitnexus-refactoring",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "path": "/opt/ethernet-linux-idpf/.github/skills/gitnexus-refactoring/SKILL.md",
+      "description": "GitNexus workflow guidance: refactoring.",
+      "notes": "Use with the gitnexus MCP tools."
+    }
+  ],
+  "target-access": [
+    {
+      "document_id": "freebsd-iflib-target-01",
+      "title": "FreeBSD iflib porting target host",
+      "version": "1.0.0",
+      "authority_class": "A5",
+      "command": "ssh -o StrictHostKeyChecking=no -o TCPKeepAlive=yes -o ServerAliveInterval=20 -o ServerAliveCountMax=10 -o HostKeyAlgorithms=+ssh-rsa root@10.102.18.118",
+      "target_os": "FreeBSD",
+      "description": "Shell on a host running the destination OS. Use it to compile the ported sources against real FreeBSD headers and to run userspace unit tests.",
+      "notes": "Build and userspace tests only. Do NOT kldload the driver or attach it to hardware: this host is shared and a failed attach can wedge it with no console recovery."
+    }
   ]
 }

@@ -1,143 +1,82 @@
 # SPDX-License-Identifier: GPL-2.0-only
 # Copyright (C) 2019-2026 Intel Corporation
-
-
-ifneq ($(KERNELRELEASE),)
-# kbuild part of makefile
 #
-# Makefile for Intel(R) Infrastructure Data Path Function Linux Driver
+# FreeBSD kernel module build for the Intel(R) IDPF driver.
 #
+# Replaces the Linux kbuild Makefile: build with plain make(1) from this
+# directory on a host that has /usr/src/sys and bsd.kmod.mk.  The ifdi_if
+# methods resolve at load time out of the iflib module, so only the generated
+# ifdi_if.h header is needed here.
+#
+# SIOV support is off by default because it drags in the ADI registry, which
+# has no consumer until a device model is wired up:
+#
+#	make ENABLE_SIOV_SUPPORT=1
 
-obj-$(CONFIG_IDPF) += idpf.o
+KMOD	= if_idpf
 
-idpf-y := \
-	idpf_controlq.o		\
-	idpf_controlq_setup.o	\
-	idpf_dev.o		\
-	idpf_ethtool.o		\
-	idpf_idc.o		\
-	idpf_lib.o		\
-	idpf_main.o		\
-	idpf_txrx.o		\
-	idpf_virtchnl.o 	\
-	idpf_singleq_txrx.o \
-	idpf_controlq.o \
-	idpf_xsk.o \
-	idpf_vf_dev.o
-idpf-$(CONFIG_PTP_1588_CLOCK:m=y) += idpf_ptp.o idpf_virtchnl_ptp.o
-idpf-y += kcompat.o
-# Use kcompat DIMLIB if kernel doesn't provide it
-ifndef CONFIG_DIMLIB
-idpf-y += kcompat_dim.o kcompat_net_dim.o
-endif
-ifneq (${ENABLE_SIOV_SUPPORT},)
-idpf-$(CONFIG_VFIO_MDEV:m=y) += idpf_vdcm_main.o idpf_vdcm_dev.o idpf_adi.o
-endif
-ifneq (${ENABLE_DEVLINK_SUPPORT},)
-idpf-$(CONFIG_NET_DEVLINK:m=y) += idpf_devlink.o
-override ccflags-$(CONFIG_NET_DEVLINK:m=y) += -DDEVLINK_ENABLED
-endif
-idpf-$(CONFIG_PTP_1588_CLOCK:m=y) += idpf_ptp.o idpf_virtchnl_ptp.o
-else	# ifneq($(KERNELRELEASE),)
-# normal makefile
+SRCS	= device_if.h bus_if.h pci_if.h ifdi_if.h
+SRCS	+= opt_inet.h opt_inet6.h opt_rss.h
 
-DRIVER := idpf
+SRCS	+= idpf_main.c
+SRCS	+= idpf_lib.c
+SRCS	+= idpf_osdep.c
+SRCS	+= idpf_txrx.c
+SRCS	+= idpf_singleq_txrx.c
+SRCS	+= idpf_virtchnl.c
+SRCS	+= idpf_controlq.c
+SRCS	+= idpf_controlq_setup.c
+SRCS	+= idpf_dev.c
+SRCS	+= idpf_vf_dev.c
+SRCS	+= idpf_ptp.c
 
-AUX_BUS_HEADER := ./auxiliary_bus.h
-CHECK_AUX_BUS := ../../check_aux_bus
-COMMON_MK ?= $(wildcard common.mk)
-ifeq (${COMMON_MK},)
-  $(error Cannot find common.mk build rules)
-else
-  include ${COMMON_MK}
-endif
+.if defined(ENABLE_SIOV_SUPPORT)
+SRCS	+= idpf_adi.c
+CFLAGS	+= -DENABLE_SIOV_SUPPORT
+.endif
 
-# idpf does not support building on kernels older than 3.10.0
-$(call minimum_kver_check,3,10,0)
+#
+# The Linux-only sources have been removed from the tree rather than left
+# unbuilt: ethtool, IIDC/auxiliary bus (RDMA), AF_XDP, devlink, VFIO/mdev and
+# the kcompat layer all depend on subsystems with no FreeBSD counterpart, and
+# no call site in the ported driver remains.  They are recoverable from git
+# history if a port is attempted later.
+#
+# idpf_ptp.c covers PTP capability negotiation and the device clock only; TX
+# timestamp latch harvest is not ported (see idpf_ptp.h).
+#
+# Include paths: driver sources, shared code, and virtchnl headers
+CFLAGS+=	-I${.CURDIR}/../shared
+CFLAGS+=	-I${.CURDIR}/../shared/virtchnl
+CFLAGS+=	-I${.CURDIR}
+CFLAGS+=	-I/usr/src/sys/compat/linuxkpi/common/include
 
-# Command to update initramfs or display a warning message
-ifeq (${cmd_initrd},)
-define cmd_initramfs
-@echo "Unable to update initramfs. You may need to do this manaully."
-endef
-else
-define cmd_initramfs
-@echo "Updating initramfs..."
-$(call cmd_initrd)
-endef
-endif
+# Define FREEBSD_SUPPORT for shared code OS detection
+CFLAGS+=	-DFREEBSD_SUPPORT
+CFLAGS+=	-D__KERNEL__
+CFLAGS+=	-DLINUX_SUPPORT
+CFLAGS+=	-DCONFIG_EDT
+CFLAGS+=	-include ${.CURDIR}/idpf_type_compat.h
+CFLAGS+=	-include ${.CURDIR}/idpf_osdep.h
+CFLAGS+=	-include linux/bits.h
+CFLAGS+=	-include idpf_type.h
+CFLAGS+=	-include idpf_lan_pf_regs.h
+CFLAGS+=	-include idpf_lan_txrx.h
+CFLAGS+=	-include idpf_lan_vf_regs.h
+CFLAGS+=	-include virtchnl/virtchnl2.h
 
-all:
-	+$(call kernelbuild,modules)
-	@gzip -c ../${DRIVER}.${MANSECTION} > ${DRIVER}.${MANSECTION}.gz
+# Path to shared code .c files for bsd.kmod.mk
+.PATH:		${.CURDIR}/../shared
 
-clean:
-	+$(call kernelbuild,clean)
-	@-rm -rf *.${MANSECTION}.gz *.ko
+# Per-file CFLAGS: Force-include idpf_type_compat.h ONLY for shared code files
+# This minimal header provides type definitions without kernel includes,
+# avoiding preprocessing issues. The full idpf_osdep.h is included normally
+# by shared code headers that need it.
+# When adding new shared code files, add a corresponding line here.
+#
+# Use CFLAGS.<source> (bsd.sys.mk) rather than a "target: CFLAGS +=" line: a
+# target-local assignment starts from an empty value in bmake and would drop
+# the -I/-D flags set above.
+CWARNFLAGS	+= -Wno-unused-parameter
 
-# Install kernel module files. This target is called by the RPM specfile when
-# generating binary RPMs, and is not expected to modify files outside of the
-# build root. Thus, it must not update initramfs, or run depmod.
-modules_install: all
-	$(call kernelbuild,modules_install)
-	${auxiliary_post_install}
-
-mandocs_install: all
-	install -D -m 644 ${DRIVER}.${MANSECTION}.gz ${INSTALL_MOD_PATH}${MANDIR}/man${MANSECTION}/${DRIVER}.${MANSECTION}.gz
-
-auxiliary_info:
-	@../../check_aux_bus --verbose --ksrc="${KSRC}" --build-kernel="${BUILD_KERNEL}"
-
-ifeq (${NEED_AUX_BUS},1)
-all: auxiliary_info
-endif
-
-# After installing all the files, perform necessary work to ensure the system
-# will use the new modules. This includes running depmod to update module
-# dependencies and updating the initramfs image in case the module is loaded
-# during early boot.
-install: modules_install mandocs_install
-	$(call cmd_depmod)
-	$(call cmd_initramfs)
-
-# Remove installed module files. This target is called by the RPM specfile when
-# generating binary RPMs, and is not expected to modify files outside of the
-# build root. Thus, it must not update the initramfs image or run depmod.
-modules_uninstall:
-	rm -f ${INSTALL_MOD_PATH}/lib/modules/${KVER}/${INSTALL_MOD_DIR}/${DRIVER}.ko
-
-mandocs_uninstall:
-	rm -f ${INSTALL_MOD_PATH}${MANDIR}/man${MANSECTION}/${DRIVER}.${MANSECTION}.gz 2>/dev/null
-
-# After uninstalling all the files, perform necessary work to restore the
-# system back to using the default kernel modules. This includes running depmod
-# to update module dependencies and updating the initramfs image.
-uninstall: modules_uninstall mandocs_uninstall
-	$(call cmd_depmod)
-	$(call cmd_initramfs)
-
-help:
-	@echo 'Building external (out-of-tree) modules:'
-	@echo '  all               - default target, build the module(s) and manpage'
-	@echo '  clean             - remove generated files'
-	@echo '  modules_install   - install the module(s) only'
-	@echo '  mandocs_install   - install the manpage only'
-	@echo '  install           - install the module(s) and manpage, and update initramfs'
-	@echo '  modules_uninstall - uninstall the module(s) only'
-	@echo '  mandocs_uninstall - uninstall the manpage only'
-	@echo '  uninstall         - uninstall the module(s) and manpage, and update initramfs'
-	@echo '  auxiliary_info    - print information about the auxiliary module'
-	@echo ''
-	@echo 'Command-line options:'
-	@echo '  KSRC=<path>     - Path to kernel source (defaults to running kernel)'
-	@echo '  LINUX_VERSION=<x.y.z> - Debug tool to force kernel LINUX_VERSION_CODE for'
-	@echo '                          external module(s).  *** Use at your own risk! ***'
-	@echo '  INSTALL_MOD_PATH=<path> - Prefix added to default module(s) installation path'
-	@echo '                            (/lib/modules/$$(KERNELRELEASE)/)'
-	@echo '  INSTALL_MOD_DIR=<path> - Install module(s) in subdirectory other than default'
-	@echo '                           (.../updates/drivers/net/ethernet/intel/${DRIVER}/)'
-	@echo ''
-
-.PHONY: all clean modules_install mandocs_install install modules_uninstall mandocs_uninstall uninstall help auxiliary_info
-
-endif	# ifneq($(KERNELRELEASE),)
+.include <bsd.kmod.mk>
