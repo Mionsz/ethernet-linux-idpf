@@ -23,3 +23,4 @@ idpf/src/idpf.mod
 Module.symvers
 modules.order
 scripts/nic_port_framework/run_framework.sh
+.vscode/settings.json

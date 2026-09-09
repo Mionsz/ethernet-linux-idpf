@@ -1,49 +1,87 @@
-idpf Linux* Base Driver Readme for Infrastructure Data-Plane Function
-****************************************************************************
+# Intel IDPF FreeBSD Port
 
-1. Userspace tests — safe, run these
+This repository contains the FreeBSD kernel-module port of Intel's
+Infrastructure Data-Plane Function (IDPF) driver. Use `quick_start.sh` for
+normal builds and tests; it writes a per-stage `PASS`, `FAIL`, or `SKIP`
+summary and stores logs in `.quick-start/`.
 
-Builds idpf_controlq.c + idpf_controlq_setup.c unmodified against the mock in mock and runs them as a normal process. 13 cases, 64 checks. No kernel, no src needed, and a failure is just a non-zero exit. Currently passes on both hosts.
+## Quick Start
 
-Locally on the FreeBSD box you can also just:
+Run these commands from the repository root.
 
+### Linux or another non-FreeBSD host
 
-2. Driver build
+Set the FreeBSD build target, then run the desired stage. The runner transfers
+the required source and runs the FreeBSD build remotely over SSH. On Windows,
+use WSL or Git Bash.
 
-Compiles the kmod only. Build it on the host you intend to load on — a module built against 15.0 sources isn't guaranteed to load on a 15.1 kernel.
-
-3. Module load/unload stress
-
-62 kldload/kldunload cycles across nine delay tiers plus negative paths. Requires fbsd-build.sh to have run first. This only exercises module scope — with no IDPF device present the probe never matches, so it does not test attach/detach.
-
-4. In-kernel test module — builds only, does not load
-
-Stops at the .ko deliberately. Loading is a separate manual step, and only on freebsd (freebsd01 has no src):
-
-
-Each case prints -> suite.case before it runs, so if the box wedges, the last console line names the culprit.
-
-I have not run this since fixing the crash. It's the harness that panicked freebsd earlier — my fixture called idpf_vf_dev_ops_init(), which reaches pci_get_device() on a fabricated non-PCI device. That's fixed and it compiles clean, but it's unverified at runtime. Both hosts now have debug.debugger_on_panic=0 and a 10s reboot wait, so a panic reboots rather than parking at db> — but it's still a reboot. I'd want your go-ahead before running it, or I can run it if you'd rather I just proved it out.
-
-Quick reference
-Script	Risk	Needs src	Covers
-fbsd-user-test.sh	none	no	control queue + simulated control plane
-fbsd-build.sh	none	yes	compiles
-fbsd-kld-test.sh	low	yes	module load/unload, not attach
-fbsd-unit-build.sh	none to build, reboot risk to load	yes	taskqueues, PF device ops, ctlq in kernel context
-
-
-# Rozpakowanie archiwum
-mkdir -p /opt/idpf-ported
-mv idpf.tgz /opt/idpf-ported/idpf.tgz
-cd /opt/idpf-ported/
-tar -xzf idpf.tgz && rm idpf.tgz
-
-
-# Docelowy host freebsd dostepny z maszyny z linuxem:
+```sh
 export FBSD_HOST=root@10.102.18.118
 
-./scripts/fbsd-build.sh
-./scripts/fbsd-unit-build.sh
-./scripts/fbsd-kld-test.sh
-./scripts/fbsd-user-test.sh
+./quick_start.sh                 # Build if_idpf.ko remotely
+./quick_start.sh --test          # Build kernel and userspace test binaries
+./quick_start.sh --run           # Build and run safe userspace tests
+./quick_start.sh --all           # Build, install, build tests, and run tests
+```
+
+### FreeBSD host
+
+Run the same commands directly on the FreeBSD system. The runner verifies the
+build environment and installs missing `python3`, `cpputest`, and `llvm19`
+packages when run as root.
+
+```sh
+cd /path/to/ethernet-linux-idpf
+
+./quick_start.sh                 # Build only
+./quick_start.sh --test          # Build tests only
+./quick_start.sh --run           # Build and run safe userspace tests
+./quick_start.sh --all           # Build, install, build tests, and run tests
+```
+
+`--install` copies `if_idpf.ko` to `/boot/modules/if_idpf.ko` and runs
+`kldxref`; it never loads the module. Set `IDPF_INSTALL_DIR` to install
+somewhere else.
+
+## Test Levels
+
+| Command | What it does | Hardware risk |
+| --- | --- | --- |
+| `./quick_start.sh` | Builds the FreeBSD kernel module | None |
+| `./quick_start.sh --test` | Builds the inert kernel test module and userspace tests | None |
+| `./quick_start.sh --run` | Runs control-queue tests using a simulated control plane | None |
+| `./quick_start.sh --all` | Builds, installs, builds tests, and runs safe userspace tests | None |
+
+The userspace suite currently runs 20 cases and 136 checks. It does not load
+a kernel module or touch network hardware.
+
+## Hardware Validation
+
+Hardware validation can load the module, attach a physical device, change
+interface settings, and transmit traffic. It is never included in `--all`.
+
+Before running it, confirm that a usable serial or IPMI console is open and
+that the target is safe to recover. Then run:
+
+```sh
+./quick_start.sh --hardware --console-confirmed \
+  --interface idpf0 --peer 192.168.211.99
+```
+
+This runs module lifecycle, attach, validation, datapath, hardening, PTP, and
+Linux IRQ-affinity checks. `set_irq_affinity` is Linux-only and is reported as
+`SKIP` on FreeBSD.
+
+## Configuration
+
+| Variable or option | Purpose | Default |
+| --- | --- | --- |
+| `FBSD_HOST` or `--host` | Remote FreeBSD SSH target | `10.102.18.118` |
+| `IDPF_REMOTE_DIR` | Remote build directory | `/tmp/idpfbuild` |
+| `IDPF_IFACE` or `--interface` | IDPF interface for hardware checks | `idpf0` |
+| `TESTPEER` or `--peer` | Peer address for traffic tests | `192.168.211.99` |
+| `TESTIP` | Address assigned to the IDPF interface | `192.168.211.1/24` |
+| `IDPF_LOG_DIR` | Directory for `quick_start.sh` logs | `.quick-start/` |
+| `IDPF_PKG_TIMEOUT` | Package-install timeout in seconds | `120` |
+
+Run `./quick_start.sh --help` for the full option list.
