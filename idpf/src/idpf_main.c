@@ -119,11 +119,11 @@ IFLIB_PNP_INFO(pci, idpf, idpf_vendor_info_array);
 #endif
 
 /*
- * The split queue model puts the completion queue at ring 0 of every queue
- * set, so a TX set is {completion, data} and an RX set is {completion, and
- * one free list per buffer queue}.  IFLIB_SKIP_MSIX is set because the
- * function's MSI-X vectors are pooled across vports in idpf_intr_req()
- * rather than allocated per interface.  [FBSD15:A30-A34]
+ * This port enforces the single-queue model because iflib's in-order credit
+ * contract cannot represent flow-scheduled split TX completion ordering.
+ * IFLIB_SKIP_MSIX is set because the function's MSI-X vectors are pooled
+ * across vports in idpf_intr_req() rather than allocated per interface.
+ * [FBSD15:A30-A34]
  */
 static struct if_shared_ctx idpf_sctx = {
 	.isc_magic		= IFLIB_MAGIC,
@@ -137,17 +137,12 @@ static struct if_shared_ctx idpf_sctx = {
 	.isc_ntxqs		= 1,
 	.isc_nrxqs		= 1,
 
-	.isc_ntxd_min		= { IDPF_MIN_TXQ_DESC, IDPF_MIN_TXQ_DESC },
-	.isc_ntxd_max		= { IDPF_MAX_TXQ_DESC, IDPF_MAX_TXQ_DESC },
-	.isc_ntxd_default	= { IDPF_DFLT_TX_Q_DESC_COUNT,
-				    IDPF_DFLT_TX_Q_DESC_COUNT },
-	.isc_nrxd_min		= { IDPF_MIN_RXQ_DESC, IDPF_MIN_RXQ_DESC,
-				    IDPF_MIN_RXQ_DESC },
-	.isc_nrxd_max		= { IDPF_MAX_RXQ_DESC, IDPF_MAX_RXQ_DESC,
-				    IDPF_MAX_RXQ_DESC },
-	.isc_nrxd_default	= { IDPF_DFLT_RX_Q_DESC_COUNT,
-				    IDPF_DFLT_RX_Q_DESC_COUNT,
-				    IDPF_DFLT_RX_Q_DESC_COUNT },
+	.isc_ntxd_min		= { IDPF_MIN_TXQ_DESC },
+	.isc_ntxd_max		= { IDPF_MAX_TXQ_DESC },
+	.isc_ntxd_default	= { IDPF_DFLT_TX_Q_DESC_COUNT },
+	.isc_nrxd_min		= { IDPF_MIN_RXQ_DESC },
+	.isc_nrxd_max		= { IDPF_MAX_RXQ_DESC },
+	.isc_nrxd_default	= { IDPF_DFLT_RX_Q_DESC_COUNT },
 
 	.isc_tx_maxsize		= IDPF_TX_MAX_DESC_DATA,
 	.isc_tx_maxsegsize	= IDPF_TX_MAX_DESC_DATA,

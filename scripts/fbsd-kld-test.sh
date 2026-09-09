@@ -15,6 +15,7 @@ set -e
 
 HOST=${FBSD_HOST:-10.102.18.118}
 REMOTE_DIR=${1:-${IDPF_REMOTE_DIR:-/tmp/idpfbuild}}
+BUILD_DIR=${IDPF_BUILD_DIR:-$REMOTE_DIR/idpf}
 REMOTE_SCRIPT=/tmp/idpf-kld-test.sh
 
 case "${IDPF_ALLOW_HARDWARE:-}" in
@@ -24,6 +25,27 @@ case "${IDPF_ALLOW_HARDWARE:-}" in
 	exit 2
 	;;
 esac
+
+has_physical_idpf() {
+	pciconf -l 2>/dev/null | awk '
+		tolower($0) ~ /vendor=0x8086/ &&
+		    tolower($0) ~ /device=0x(1452|145c|11df|0de2|0dd5)([^0-9a-f]|$)/ {
+			found = 1
+		}
+		END { exit !found }
+	'
+}
+
+if [ "$HOST" = local ]; then
+	if has_physical_idpf; then
+		echo "RESULT: SKIP - supported physical IDPF PCI function detected"
+		exit 2
+	fi
+elif ssh -o BatchMode=yes -o ConnectTimeout=30 "$HOST" \
+	'pciconf -l 2>/dev/null | awk '\''tolower($0) ~ /vendor=0x8086/ && tolower($0) ~ /device=0x(1452|145c|11df|0de2|0dd5)([^0-9a-f]|$)/ { found = 1 } END { exit !found }'\'''; then
+	echo "RESULT: SKIP - supported physical IDPF PCI function detected on $HOST"
+	exit 2
+fi
 case "${IDPF_CONSOLE_CONFIRMED:-}" in
 1|yes|true) ;;
 *)
@@ -139,9 +161,9 @@ REMOTE_EOF
 if [ "$HOST" = local ]; then
 	cp /tmp/idpf-kld-test.sh.local "$REMOTE_SCRIPT"
 	chmod +x "$REMOTE_SCRIPT"
-	cd "$REMOTE_DIR/src"
+	cd "$BUILD_DIR/src"
 	exec "$REMOTE_SCRIPT"
 fi
 
 scp -q -o BatchMode=yes /tmp/idpf-kld-test.sh.local "$HOST:$REMOTE_SCRIPT"
-ssh -o BatchMode=yes "$HOST" "chmod +x $REMOTE_SCRIPT && cd $REMOTE_DIR/src && $REMOTE_SCRIPT"
+ssh -o BatchMode=yes "$HOST" "chmod +x $REMOTE_SCRIPT && cd $BUILD_DIR/src && $REMOTE_SCRIPT"

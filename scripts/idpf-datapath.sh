@@ -23,7 +23,7 @@
 set -u
 
 IFACE="${1:-idpf0}"
-KMOD="${2:-/tmp/idpfbuild/src/if_idpf.ko}"
+KMOD="${2:-/tmp/idpfbuild/idpf/src/if_idpf.ko}"
 TESTIP="${TESTIP:-192.168.211.1/24}"
 PEER="${PEER:-192.168.211.99}"
 TEST_BROADCAST="${TEST_BROADCAST:-192.168.211.255}"

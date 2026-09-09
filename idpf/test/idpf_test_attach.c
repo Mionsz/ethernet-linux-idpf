@@ -217,6 +217,24 @@ test_ctlq_reg_init_offsets_are_in_window(void)
 	idpf_test_env_teardown(&env);
 }
 
+static void
+test_iflib_context_matches_singleq_contract(void)
+{
+
+	IDPF_EXPECT_EQ(idpf_sctx.isc_nfl, 1);
+	IDPF_EXPECT_EQ(idpf_sctx.isc_ntxqs, 1);
+	IDPF_EXPECT_EQ(idpf_sctx.isc_nrxqs, 1);
+	IDPF_EXPECT((idpf_sctx.isc_flags &
+	    (IFLIB_HAS_TXCQ | IFLIB_HAS_RXCQ)) == 0,
+	    "single-queue model must not advertise completion rings");
+	IDPF_EXPECT_EQ(idpf_sctx.isc_ntxd_min[1], 0);
+	IDPF_EXPECT_EQ(idpf_sctx.isc_ntxd_max[1], 0);
+	IDPF_EXPECT_EQ(idpf_sctx.isc_ntxd_default[1], 0);
+	IDPF_EXPECT_EQ(idpf_sctx.isc_nrxd_min[1], 0);
+	IDPF_EXPECT_EQ(idpf_sctx.isc_nrxd_max[1], 0);
+	IDPF_EXPECT_EQ(idpf_sctx.isc_nrxd_default[1], 0);
+}
+
 static const struct idpf_test_case attach_cases[] = {
 	{ "taskqueues_lifecycle", test_taskqueues_lifecycle },
 	{ "taskqueues_no_stats_wq_on_simics",
@@ -227,6 +245,8 @@ static const struct idpf_test_case attach_cases[] = {
 	{ "dev_ops_publish_windows", test_dev_ops_publish_windows },
 	{ "ctlq_reg_init_offsets_are_in_window",
 	  test_ctlq_reg_init_offsets_are_in_window },
+	{ "iflib_context_matches_singleq_contract",
+	  test_iflib_context_matches_singleq_contract },
 };
 
 const struct idpf_test_suite idpf_test_suite_attach =

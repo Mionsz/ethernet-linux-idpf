@@ -13,7 +13,7 @@
 
 set -u
 IFACE="${1:-idpf0}"
-KMOD="${KMOD:-/tmp/idpfbuild/src/if_idpf.ko}"
+KMOD="${KMOD:-/tmp/idpfbuild/idpf/src/if_idpf.ko}"
 DRIVER=${IFACE%%[0-9]*}
 UNIT=${IFACE#"$DRIVER"}
 [ -n "$UNIT" ] || UNIT=0

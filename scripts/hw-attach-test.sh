@@ -11,7 +11,7 @@
 #
 # Usage: hw-attach-test.sh [seconds-to-observe]
 OBSERVE=${1:-30}
-KO=${KMOD:-/tmp/idpfbuild/src/if_idpf.ko}
+KO=${KMOD:-/tmp/idpfbuild/idpf/src/if_idpf.ko}
 DEV=${IDPF_IFACE:-idpf0}
 PCI_MATCH=${PCI_MATCH:-idpf}
 
@@ -31,6 +31,9 @@ case "${IDPF_CONSOLE_CONFIRMED:-}" in
 *) log "set IDPF_CONSOLE_CONFIRMED=1 after verifying console access"; exit 2 ;;
 esac
 [ -f "$KO" ] || { log "module not found: $KO"; exit 1; }
+case "$OBSERVE" in
+*[!0-9]*|'') log "observation interval must be a non-negative integer"; exit 1 ;;
+esac
 
 # Panic must reboot rather than park at db>; sysctls do not survive a reboot.
 sysctl debug.debugger_on_panic=0 >/dev/null 2>&1

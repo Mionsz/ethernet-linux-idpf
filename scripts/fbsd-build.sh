@@ -9,17 +9,25 @@ set -e
 
 HOST=${FBSD_HOST:-10.102.18.118}
 LINES=${1:-60}
-LOCAL_SRC=/opt/ethernet-linux-idpf/idpf
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 REMOTE_DIR=${IDPF_REMOTE_DIR:-/tmp/idpfbuild}
 
-cd "$LOCAL_SRC"
-tar -czf /tmp/idpf-src.tgz src shared
+cd "$REPO_ROOT"
+if ! git submodule update --init --recursive; then
+	echo "WARNING: submodule update was incomplete; preserving existing submodule worktrees" >&2
+	git submodule status --recursive >&2 || true
+fi
+tar -czf /tmp/idpf-src.tgz \
+	--exclude='./scripts/nic_port_framework' \
+	--exclude='*/.git' --exclude='*/.git/*' \
+	Makefile idpf scripts README.md quick_start.sh
 scp -q -o BatchMode=yes /tmp/idpf-src.tgz "$HOST:/tmp/"
 
 ssh -o BatchMode=yes "$HOST" "
 	rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR &&
 	tar -xzf /tmp/idpf-src.tgz -C $REMOTE_DIR &&
-	cd $REMOTE_DIR/src &&
+	cd $REMOTE_DIR/idpf/src &&
 	make -j4 > /tmp/idpf-build.log 2>&1
 	rc=\$?
 	echo \"=== exit \$rc ===\"

@@ -1115,13 +1115,7 @@ idpf_send_get_lan_memory_regions(struct idpf_adapter *adapter)
 	if (rcvd_regions == NULL)
 		return (ENOMEM);
 
-	rcvd_regions->num_memory_regions = htole16(1);
-
 	xn_params.vc_op = VIRTCHNL2_OP_GET_LAN_MEMORY_REGIONS;
-	xn_params.send_buf.iov_base = rcvd_regions;
-	xn_params.send_buf.iov_len =
-	    sizeof(struct virtchnl2_get_lan_memory_regions) +
-	    sizeof(struct virtchnl2_mem_region);
 	xn_params.recv_buf.iov_base = rcvd_regions;
 	xn_params.recv_buf.iov_len = IDPF_CTLQ_MAX_BUF_LEN;
 	xn_params.timeout_ms = IDPF_VC_XN_DEFAULT_TIMEOUT_MSEC;

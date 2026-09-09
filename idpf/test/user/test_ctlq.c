@@ -300,7 +300,7 @@ test_deinit_clears_registers_on_simics(void)
 }
 
 static void
-test_deinit_leaves_registers_on_silicon(void)
+test_deinit_clears_registers_on_silicon(void)
 {
 	struct fixture f;
 
@@ -313,8 +313,12 @@ test_deinit_leaves_registers_on_silicon(void)
 	f.hw.subsystem_device_id = 0;
 	idpf_ctlq_deinit(&f.hw);
 
-	EXPECT_EQ(reg_get(&f, ASQ_LEN), (RING_LEN | LEN_ENA_MASK));
-	EXPECT(reg_get(&f, ASQ_BAL) != 0, "ASQ base unexpectedly cleared");
+	EXPECT_EQ(reg_get(&f, ASQ_LEN), 0);
+	EXPECT_EQ(reg_get(&f, ASQ_BAL), 0);
+	EXPECT_EQ(reg_get(&f, ASQ_BAH), 0);
+	EXPECT_EQ(reg_get(&f, ASQ_HEAD), 0);
+	EXPECT_EQ(reg_get(&f, ARQ_LEN), 0);
+	EXPECT_EQ(reg_get(&f, ARQ_BAL), 0);
 
 	idpf_test_kfree(f.regfile);
 }
@@ -910,8 +914,8 @@ static const struct test_case cases[] = {
 	{ "init_programs_registers", test_init_programs_registers },
 	{ "deinit_clears_registers_on_simics",
 	  test_deinit_clears_registers_on_simics },
-	{ "deinit_leaves_registers_on_silicon",
-	  test_deinit_leaves_registers_on_silicon },
+	{ "deinit_clears_registers_on_silicon",
+	  test_deinit_clears_registers_on_silicon },
 	{ "send_writes_descriptor", test_send_writes_descriptor },
 	{ "send_rejects_missing_payload", test_send_rejects_missing_payload },
 	{ "send_full_ring", test_send_full_ring },

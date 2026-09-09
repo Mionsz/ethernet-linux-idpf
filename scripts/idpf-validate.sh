@@ -17,7 +17,7 @@
 set -u
 
 IFACE="${1:-idpf0}"
-KMOD="${2:-/tmp/idpfbuild/src/if_idpf.ko}"
+KMOD="${2:-/tmp/idpfbuild/idpf/src/if_idpf.ko}"
 OUTDIR="${3:-/tmp/idpf_validate_$(date +%Y%m%d_%H%M%S)}"
 
 TESTIP="${TESTIP:-192.168.211.1/24}"

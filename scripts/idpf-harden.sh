@@ -14,7 +14,7 @@
 set -u
 
 IFACE="${1:-idpf0}"
-KMOD="${2:-/tmp/idpfbuild/src/if_idpf.ko}"
+KMOD="${2:-/tmp/idpfbuild/idpf/src/if_idpf.ko}"
 TESTIP="${TESTIP:-192.168.211.1/24}"
 TESTPEER="${TESTPEER:-192.168.211.99}"
 VLANPEER="${VLANPEER:-192.168.212.99}"

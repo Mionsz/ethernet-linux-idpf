@@ -156,7 +156,7 @@ local_install() {
 
 remote_install() {
 	ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
-		"install -d '$install_dir' && install -m 0644 '$remote_dir/src/if_idpf.ko' '$install_dir/if_idpf.ko' && kldxref '$install_dir'"
+		"install -d '$install_dir' && install -m 0644 '$remote_dir/idpf/src/if_idpf.ko' '$install_dir/if_idpf.ko' && kldxref '$install_dir'"
 }
 
 local_test_build() {
@@ -166,6 +166,14 @@ local_test_build() {
 
 local_test_run() {
 	make -C "$repo_root/idpf/test/user" run
+}
+
+prepare_submodules() {
+	cd "$repo_root" || return 1
+	if ! git submodule update --init --recursive; then
+		echo "WARNING: submodule update was incomplete; preserving existing submodule worktrees" >&2
+		git submodule status --recursive >&2 || true
+	fi
 }
 
 stage_remote_hardware_scripts() {
@@ -180,10 +188,9 @@ stage_remote_hardware_scripts() {
 run_local_hardware() {
 	local module="$repo_root/idpf/src/if_idpf.ko"
 	local script
-	for script in fbsd-kld-test.sh hw-cleanup.sh hw-attach-test.sh idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
+	for script in hw-cleanup.sh hw-attach-test.sh idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
 		case "$script" in
 		hw-cleanup.sh) run_stage "$script" "$repo_root/scripts/$script" "$interface" ;;
-		fbsd-kld-test.sh) run_stage "$script" env FBSD_HOST=local IDPF_REMOTE_DIR="$repo_root/idpf" IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 "$repo_root/scripts/$script" ;;
 		hw-attach-test.sh) run_stage "$script" env KMOD="$module" IDPF_IFACE="$interface" IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 "$repo_root/scripts/$script" ;;
 		idpf-validate.sh|idpf-datapath.sh|idpf-harden.sh|idpf-ptp-validate.sh)
 			run_stage "$script" env KMOD="$module" IDPF_ALLOW_HARDWARE=1 TESTPEER="$peer" PEER="$peer" "$repo_root/scripts/$script" "$interface" "$module"
@@ -196,15 +203,19 @@ run_local_hardware() {
 run_remote_hardware() {
 	local script
 	stage_remote_hardware_scripts || return 1
-	run_stage fbsd-kld-test.sh env FBSD_HOST="$host" IDPF_REMOTE_DIR="$remote_dir" IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 "$repo_root/scripts/fbsd-kld-test.sh"
 	for script in hw-cleanup.sh hw-attach-test.sh idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
 		if [[ $script == set_irq_affinity ]]; then
 			run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
 				"'$remote_dir/scripts/$script' -s '$interface'"
 			continue
 		fi
+		if [[ $script == hw-attach-test.sh ]]; then
+			run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
+				"KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 '$remote_dir/scripts/$script'"
+			continue
+		fi
 		run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
-			"PATH='$remote_dir/scripts':\$PATH KMOD='$remote_dir/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 TESTPEER='$peer' PEER='$peer' '$remote_dir/scripts/$script' '$interface' '$remote_dir/src/if_idpf.ko'"
+			"PATH='$remote_dir/scripts':\$PATH KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 TESTPEER='$peer' PEER='$peer' '$remote_dir/scripts/$script' '$interface' '$remote_dir/idpf/src/if_idpf.ko'"
 	done
 }
 
@@ -222,6 +233,9 @@ if (( on_freebsd )); then
 		fi
 	fi
 else
+	if (( want_build || want_test || want_run || want_hardware )); then
+		run_stage submodule-prepare prepare_submodules
+	fi
 	run_stage dependencies remote_dependencies
 	if (( want_build )); then run_stage driver-build env FBSD_HOST="$host" IDPF_REMOTE_DIR="$remote_dir" "$repo_root/scripts/fbsd-build.sh"; fi
 	if (( want_install )); then run_stage driver-install remote_install; fi

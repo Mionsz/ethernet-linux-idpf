@@ -5,9 +5,10 @@
  * Test module entry point.
  *
  * Builds the driver objects a second time with -DIDPF_UNIT_TEST so that the
- * file-static functions in idpf_main.c are reachable, then runs the suites at
- * module load.  Results go to the console and to hw.idpf_test.* so a script
- * can read a verdict without parsing dmesg.
+ * file-static functions in idpf_main.c are reachable. The inert module runs
+ * suites only when sysctl hw.idpf_test.run is written. Results go to the
+ * console and to hw.idpf_test.* so a script can read a verdict without
+ * parsing dmesg.
  */
 
 #include <sys/param.h>

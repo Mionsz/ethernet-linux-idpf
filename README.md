@@ -68,9 +68,8 @@ that the target is safe to recover. Then run:
   --interface idpf0 --peer 192.168.211.99
 ```
 
-This runs module lifecycle, attach, validation, datapath, hardening, PTP, and
-Linux IRQ-affinity checks. `set_irq_affinity` is Linux-only and is reported as
-`SKIP` on FreeBSD.
+This runs attach, validation, datapath, hardening, PTP, and Linux IRQ-affinity
+checks. `set_irq_affinity` is Linux-only and is reported as `SKIP` on FreeBSD.
 
 ## Configuration
 
