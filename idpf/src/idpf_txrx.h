@@ -387,13 +387,21 @@ idpf_ring_delta(u16 from, u16 to, u16 count)
  * ----------------------------------------------------------------------- */
 #define IDPF_RX_MAX_PTYPE_PROTO_IDS     32
 /*
- * proto_id is a C99 flexible array, so sizeof() covers none of it; the "- 1"
- * that suits a trailing [1] member undercounts by one element.
+ * struct_size_t() is offsetof-based, so it measures the wire size of a record
+ * (the fixed fields plus proto_id_count ids) whether virtchnl2 was built with
+ * a true flexible array or with a STRUCT_VAR_LEN trailing element.
  */
 #define IDPF_RX_MAX_PTYPE_SZ \
         struct_size_t(struct virtchnl2_ptype, proto_id, \
             IDPF_RX_MAX_PTYPE_PROTO_IDS)
-#define IDPF_RX_PTYPE_HDR_SZ    (sizeof(struct virtchnl2_get_ptype_info))
+/*
+ * Only the scalar fields precede the ptype records on the wire.  sizeof()
+ * cannot be used here: this build compiles virtchnl2 with STRUCT_VAR_LEN
+ * trailing arrays, so it would also count one reserved record and start the
+ * parse partway into the first one.
+ */
+#define IDPF_RX_PTYPE_HDR_SZ \
+        offsetof(struct virtchnl2_get_ptype_info, ptype)
 #define IDPF_RX_MAX_PTYPES_PER_BUF \
         ((IDPF_CTLQ_MAX_BUF_LEN - IDPF_RX_PTYPE_HDR_SZ) / IDPF_RX_MAX_PTYPE_SZ)
 

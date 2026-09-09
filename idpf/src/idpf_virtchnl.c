@@ -638,6 +638,59 @@ release_bufs:
 }
 
 /**
+ * idpf_vc_xn_claim_uncorrelated - adopt a reply whose cookie was not echoed
+ * @adapter: driver private data
+ * @ctlq_msg: reply taken off the receive mailbox
+ * @msg_info: cookie exactly as it arrived
+ *
+ * A control plane that rejects a request may answer with the status set but
+ * the cookie zeroed, leaving the reply with nothing to correlate on and
+ * stranding the requester for its full timeout.  Adopt such a reply only when
+ * exactly one transaction is still waiting on that opcode; any other case is
+ * ambiguous, and completing the wrong transaction is worse than waiting.
+ *
+ * Return: the matching transaction, locked, or NULL.
+ */
+static struct idpf_vc_xn *
+idpf_vc_xn_claim_uncorrelated(struct idpf_adapter *adapter,
+    const struct idpf_ctlq_msg *ctlq_msg, u16 msg_info)
+{
+	struct idpf_vc_xn *match = NULL, *xn;
+	u32 vc_op = ctlq_msg->cookie.mbx.chnl_opcode;
+	int i, found = 0;
+
+	if (msg_info != 0 || ctlq_msg->cookie.mbx.chnl_retval == 0)
+		return (NULL);
+
+	for (i = 0; i < IDPF_VC_XN_RING_LEN && found < 2; i++) {
+		xn = &adapter->vcxn_mngr->ring[i];
+
+		mtx_lock(&xn->lock);
+		if (xn->state == IDPF_VC_XN_WAITING && xn->vc_op == vc_op) {
+			match = xn;
+			found++;
+		}
+		mtx_unlock(&xn->lock);
+	}
+
+	if (found != 1)
+		return (NULL);
+
+	/* The scan released each lock, so confirm the pick still applies. */
+	mtx_lock(&match->lock);
+	if (match->state != IDPF_VC_XN_WAITING || match->vc_op != vc_op) {
+		mtx_unlock(&match->lock);
+		return (NULL);
+	}
+
+	device_printf(idpf_adapter_to_dev(adapter),
+	    "adopting uncorrelated error reply for op %u (status %u)\n",
+	    vc_op, ctlq_msg->cookie.mbx.chnl_retval);
+
+	return (match);
+}
+
+/**
  * idpf_vc_xn_forward_reply - hand a reply back to the waiting thread
  * @adapter: driver private data
  * @ctlq_msg: reply taken off the receive mailbox
@@ -668,12 +721,27 @@ idpf_vc_xn_forward_reply(struct idpf_adapter *adapter,
 
 	salt = IDPF_FIELD_GET(IDPF_VC_XN_SALT_M, msg_info);
 	if (xn->salt != salt) {
+		struct idpf_vc_xn *claimed;
+
+		/*
+		 * The control plane's status lives past this check, so report
+		 * it here too; a rejected request comes back with a zeroed
+		 * cookie and would otherwise be indistinguishable from a
+		 * genuinely stale reply.
+		 */
 		device_printf(idpf_adapter_to_dev(adapter),
-		    "transaction salt mismatch (exp %u@%02x(%d) got %u@%02x)\n",
+		    "transaction salt mismatch (exp %u@%02x(%d) got %u@%02x "
+		    "cookie %04x retval %u len %u)\n",
 		    xn->vc_op, xn->salt, xn->state,
-		    ctlq_msg->cookie.mbx.chnl_opcode, salt);
+		    ctlq_msg->cookie.mbx.chnl_opcode, salt, msg_info,
+		    ctlq_msg->cookie.mbx.chnl_retval, ctlq_msg->data_len);
 		mtx_unlock(&xn->lock);
-		return (EINVAL);
+
+		claimed = idpf_vc_xn_claim_uncorrelated(adapter, ctlq_msg,
+		    msg_info);
+		if (claimed == NULL)
+			return (EINVAL);
+		xn = claimed;
 	}
 
 	switch (xn->state) {
@@ -3531,6 +3599,19 @@ restart:
 				err = idpf_calc_remaining_mmio_regs(adapter);
 			else
 				err = idpf_send_get_lan_memory_regions(adapter);
+			if (err != 0) {
+				/*
+				 * The capability is advertised but the control
+				 * plane would not serve it.  An unadvertised
+				 * capability already falls back to deriving the
+				 * regions from BAR0, so prefer that over
+				 * refusing to attach.
+				 */
+				device_printf(dev,
+				    "LAN memory regions unavailable (%d), "
+				    "deriving them from BAR0\n", err);
+				err = idpf_calc_remaining_mmio_regs(adapter);
+			}
 			if (err != 0) {
 				device_printf(dev,
 				    "failed to get LAN memory regions: %d\n",

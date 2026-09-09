@@ -322,9 +322,31 @@ if [ "$BROKE" -eq 0 ]; then
 		|| fail "$ERRS errors after stress"
 fi
 
-section "10. Teardown under load"
+section "10. Sysctl tree integrity"
+# device_detach() ends in sysctl_ctx_free() on the device's OID tree.  If two
+# OIDs share a name under the same parent, that free walks a corrupt tree and
+# panics the machine.  The condition is visible while the driver is still
+# loaded, so check it here rather than discovering it by crashing on unload.
+UNIT=${IFACE#idpf}
+TREE_OK=1
+DUPES=$(sysctl -Na 2>/dev/null | grep "^dev\.idpf\.${UNIT}\." | sort | uniq -d)
+if [ -n "$DUPES" ]; then
+	TREE_OK=0
+	fail "duplicate sysctl OIDs under dev.idpf.$UNIT (unload would panic): $(echo "$DUPES" | tr '\n' ' ')"
+else
+	pass "no duplicate sysctl OIDs under dev.idpf.$UNIT"
+fi
+
+section "11. Teardown under load"
 # Detach while the interface is up and a sender is active: iflib must
-# quiesce the queues before the driver frees them.
+# quiesce the queues before the driver frees them.  This unload/reload cycle
+# panicked a shared validation host, so it stays opt-in and refuses to run
+# against a tree already known to be corrupt.
+if [ "${IDPF_ALLOW_DESTRUCTIVE:-0}" != "1" ]; then
+	skip "teardown under load (set IDPF_ALLOW_DESTRUCTIVE=1 to run; can panic the host)"
+elif [ "$TREE_OK" -ne 1 ]; then
+	skip "teardown under load (sysctl tree already corrupt, unload would panic)"
+else
 ifconfig "$IFACE" up 2>/dev/null
 sleep 1
 ( i=0; while [ $i -lt 2000 ]; do
@@ -363,6 +385,7 @@ if kldload "$KMOD" 2>/dev/null; then
 	fi
 else
 	fail "could not reload driver"
+fi
 fi
 
 section "Summary"

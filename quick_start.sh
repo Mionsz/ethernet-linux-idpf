@@ -98,6 +98,8 @@ run_stage() {
 	2) record_stage "$name" SKIP "precondition not met; log: $logfile" ;;
 	*) record_stage "$name" FAIL "exit $rc; log: $logfile"; failures=$((failures + 1)) ;;
 	esac
+
+	return "$rc"
 }
 
 on_freebsd=0
@@ -188,10 +190,18 @@ stage_remote_hardware_scripts() {
 run_local_hardware() {
 	local module="$repo_root/idpf/src/if_idpf.ko"
 	local script
-	for script in hw-cleanup.sh hw-attach-test.sh idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
+
+	# A stale copy in the kernel module path outranks nothing, but it is what
+	# a bare "kldload if_idpf" finds, so keep it identical to the build.
+	run_stage module-install local_install || return $?
+	run_stage hw-cleanup.sh "$repo_root/scripts/hw-cleanup.sh" "$interface" ||
+		return $?
+	run_stage hw-attach-test.sh env KMOD="$module" IDPF_IFACE="$interface" \
+		IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 \
+		"$repo_root/scripts/hw-attach-test.sh" || return $?
+
+	for script in idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
 		case "$script" in
-		hw-cleanup.sh) run_stage "$script" "$repo_root/scripts/$script" "$interface" ;;
-		hw-attach-test.sh) run_stage "$script" env KMOD="$module" IDPF_IFACE="$interface" IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 "$repo_root/scripts/$script" ;;
 		idpf-validate.sh|idpf-datapath.sh|idpf-harden.sh|idpf-ptp-validate.sh)
 			run_stage "$script" env KMOD="$module" IDPF_ALLOW_HARDWARE=1 TESTPEER="$peer" PEER="$peer" "$repo_root/scripts/$script" "$interface" "$module"
 			;;
@@ -203,15 +213,19 @@ run_local_hardware() {
 run_remote_hardware() {
 	local script
 	stage_remote_hardware_scripts || return 1
-	for script in hw-cleanup.sh hw-attach-test.sh idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
+
+	# A stale copy in the kernel module path outranks nothing, but it is what
+	# a bare "kldload if_idpf" finds, so keep it identical to the build.
+	run_stage module-install remote_install || return $?
+	run_stage hw-cleanup.sh ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
+		"'$remote_dir/scripts/hw-cleanup.sh' '$interface'" || return $?
+	run_stage hw-attach-test.sh ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
+		"KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 '$remote_dir/scripts/hw-attach-test.sh'" || return $?
+
+	for script in idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
 		if [[ $script == set_irq_affinity ]]; then
 			run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
 				"'$remote_dir/scripts/$script' -s '$interface'"
-			continue
-		fi
-		if [[ $script == hw-attach-test.sh ]]; then
-			run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
-				"KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 '$remote_dir/scripts/$script'"
 			continue
 		fi
 		run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
