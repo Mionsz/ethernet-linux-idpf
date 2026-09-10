@@ -59,6 +59,19 @@ typedef __INT64_TYPE__		s64;
 	(((~0ULL) << (l)) & (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
 #endif
 
+#ifndef static_assert
+#define static_assert	_Static_assert
+#endif
+
+#ifndef struct_size_t
+#define struct_size_t(type, member, count) \
+	(__builtin_offsetof(type, member) + sizeof(((type *)0)->member[0]) * (count))
+#endif
+
+#ifndef VIRTCHNL2_EDT_SUPPORT
+#define VIRTCHNL2_EDT_SUPPORT
+#endif
+
 #ifndef DEBUGFUNC
 #define DEBUGFUNC(S) do { } while (0)
 #endif
