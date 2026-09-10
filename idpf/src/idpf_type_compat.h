@@ -49,7 +49,6 @@ typedef __INT64_TYPE__		s64;
 #define BITS_PER_LONG_LONG (__SIZEOF_LONG_LONG__ * 8)
 #endif
 
-#ifndef __KERNEL__
 #ifndef GENMASK
 #define GENMASK(h, l) \
 	(((~0UL) - (1UL << (l)) + 1) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
@@ -59,7 +58,6 @@ typedef __INT64_TYPE__		s64;
 #define GENMASK_ULL(h, l) \
 	(((~0ULL) << (l)) & (~0ULL >> (BITS_PER_LONG_LONG - 1 - (h))))
 #endif
-#endif /* !__KERNEL__ */
 
 #ifndef static_assert
 #define static_assert	_Static_assert

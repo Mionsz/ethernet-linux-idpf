@@ -16,8 +16,11 @@ set -u
 IFACE="${1:-idpf0}"
 KMOD="${2:-/tmp/idpfbuild/idpf/src/if_idpf.ko}"
 TESTIP="${TESTIP:-192.168.211.1/24}"
-TESTPEER="${TESTPEER:-192.168.211.99}"
-VLANPEER="${VLANPEER:-192.168.212.99}"
+TESTPEER="${TESTPEER:-192.168.211.2}"
+VLANPEER="${VLANPEER:-192.168.212.2}"
+PEER_IFACE=${PEER_IFACE:-ice0}
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export IDPF_IFACE="$IFACE" TESTIP TESTPEER
 VLANID="${VLANID:-101}"
 STRESS="${STRESS:-20}"
 DRIVER=${IFACE%%[0-9]*}
@@ -53,6 +56,18 @@ fi
 ifconfig "$IFACE" inet "$TESTIP" alias 2>/dev/null
 ifconfig "$IFACE" up
 sleep 2
+sh "$SCRIPT_DIR/link-partner.sh" confirm || exit 1
+OWN_VIF=
+PEER_VIF=
+WORK=$(mktemp -d)
+restore_test_state() {
+	if [ -n "$OWN_VIF" ]; then ifconfig "$OWN_VIF" destroy || return 1; fi
+	if [ -n "$PEER_VIF" ]; then sh "$SCRIPT_DIR/link-partner.sh" exec ifconfig "$PEER_VIF" destroy || return 1; fi
+	rm -rf "$WORK"
+}
+trap 'rc=$?; restore_test_state || rc=1; exit "$rc"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 # Interface must still be usable after every subsection.
 alive() {
@@ -64,8 +79,14 @@ alive() {
 # ---------------------------------------------------------------- VLAN
 section "1. VLAN (ifdi_vlan_register / ifdi_vlan_unregister)"
 VIF="${IFACE}.${VLANID}"
-ifconfig "$VIF" destroy 2>/dev/null
+if ifconfig "$VIF" >/dev/null 2>&1; then
+	fail "VLAN interface $VIF already exists; refusing takeover"
+	exit 1
+fi
 if ifconfig "$VIF" create vlan "$VLANID" vlandev "$IFACE" 2>/dev/null; then
+	OWN_VIF=$VIF
+	PEER_VIF=$(sh "$SCRIPT_DIR/link-partner.sh" exec ifconfig vlan create vlan "$VLANID" vlandev "$PEER_IFACE") || exit 1
+	sh "$SCRIPT_DIR/link-partner.sh" exec ifconfig "$PEER_VIF" inet "$VLANPEER/24" up || exit 1
 	sleep 1
 	if ifconfig "$VIF" >/dev/null 2>&1; then
 		pass "vlan interface $VIF created"
@@ -80,7 +101,8 @@ if ifconfig "$VIF" create vlan "$VLANID" vlandev "$IFACE" 2>/dev/null; then
 		fail "vlan interface did not come up"
 	fi
 
-	ping -c 2 -t 2 "$VLANPEER" >/dev/null 2>&1
+	ping -n -S 192.168.212.1 -c 5 -t 8 "$VLANPEER" >/dev/null 2>&1 || fail "VLAN host-to-peer delivery failed"
+	sh "$SCRIPT_DIR/link-partner.sh" exec ping -n -S "$VLANPEER" -c 5 -t 8 192.168.212.1 >/dev/null 2>&1 || fail "VLAN peer-to-host delivery failed"
 	VERR=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 	if [ "${VERR:-0}" -eq 0 ]; then
 		pass "no interface errors after vlan traffic"
@@ -89,10 +111,13 @@ if ifconfig "$VIF" create vlan "$VLANID" vlandev "$IFACE" 2>/dev/null; then
 	fi
 
 	if ifconfig "$VIF" destroy 2>/dev/null; then
+		OWN_VIF=
 		pass "vlan interface destroyed"
 	else
 		fail "vlan interface destroy failed"
 	fi
+	sh "$SCRIPT_DIR/link-partner.sh" exec ifconfig "$PEER_VIF" destroy || exit 1
+	PEER_VIF=
 	sleep 1
 	if alive; then
 		pass "parent survived vlan teardown"
@@ -172,7 +197,7 @@ done
 NOW=$(ifconfig "$IFACE" | awk '/options=/{print $1}')
 [ "$NOW" = "$ORIG" ] && pass "capabilities restored to $ORIG" \
 	|| fail "capabilities are $NOW, expected $ORIG"
-ping -c 3 -t 2 "$TESTPEER" >/dev/null 2>&1
+sh "$SCRIPT_DIR/link-partner.sh" confirm || fail "peer traffic failed after capability toggling"
 CERR=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 [ "${CERR:-0}" -eq 0 ] && pass "no errors after capability toggling" \
 	|| fail "$CERR errors after capability toggling"
@@ -222,7 +247,7 @@ CUR=$(ifconfig "$IFACE" | sed -n 's/.*mtu \([0-9]*\).*/\1/p')
 
 # --------------------------------------------------- private ioctl abuse
 section "7. Private ioctl negative cases"
-cat > /tmp/drvspec_neg.c <<'EOF'
+cat > "$WORK/drvspec_neg.c" <<'EOF'
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -255,8 +280,8 @@ int main(int argc, char **argv)
 	return bad;
 }
 EOF
-if cc -O2 -o /tmp/drvspec_neg /tmp/drvspec_neg.c 2>/dev/null; then
-	OUT=$(/tmp/drvspec_neg "$IFACE" 2>&1)
+if cc -O2 -o "$WORK/drvspec_neg" "$WORK/drvspec_neg.c" 2>/dev/null; then
+	OUT=$("$WORK/drvspec_neg" "$IFACE" 2>&1)
 	echo "$OUT" | grep -q "REJECT-OK" \
 		&& pass "malformed private ioctls rejected" \
 		|| fail "private ioctl accepted bad input: $OUT"
@@ -273,7 +298,7 @@ else
 	fail "expected >=12 statistics nodes, found ${NODES:-0}"
 fi
 TX0=$(sysctl -n "dev.$DRIVER.$UNIT.stats.tx_bytes" 2>/dev/null || echo 0)
-ping -c 5 -i 0.2 -t 2 "$TESTPEER" >/dev/null 2>&1
+sh "$SCRIPT_DIR/link-partner.sh" confirm || fail "statistics test peer delivery failed"
 sleep 2
 TX1=$(sysctl -n "dev.$DRIVER.$UNIT.stats.tx_bytes" 2>/dev/null || echo 0)
 if [ "${TX1:-0}" -gt "${TX0:-0}" ]; then
@@ -316,7 +341,7 @@ alive && pass "$STRESS promisc flaps survived" || fail "interface broken after p
 if [ "$BROKE" -eq 0 ]; then
 	ifconfig "$IFACE" up 2>/dev/null
 	sleep 2
-	ping -c 3 -t 2 "$TESTPEER" >/dev/null 2>&1
+	sh "$SCRIPT_DIR/link-partner.sh" confirm || fail "peer traffic failed after stress"
 	ERRS=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 	[ "${ERRS:-0}" -eq 0 ] && pass "no errors after stress" \
 		|| fail "$ERRS errors after stress"
@@ -347,6 +372,7 @@ if [ "${IDPF_ALLOW_DESTRUCTIVE:-0}" != "1" ]; then
 elif [ "$TREE_OK" -ne 1 ]; then
 	skip "teardown under load (sysctl tree already corrupt, unload would panic)"
 else
+sh "$SCRIPT_DIR/link-partner.sh" confirm || exit 1
 ifconfig "$IFACE" up 2>/dev/null
 sleep 1
 ( i=0; while [ $i -lt 2000 ]; do
@@ -376,7 +402,7 @@ if kldload "$KMOD" 2>/dev/null; then
 		ifconfig "$IFACE" inet "$TESTIP" alias 2>/dev/null
 		ifconfig "$IFACE" up
 		sleep 3
-		ping -c 3 -t 2 "$TESTPEER" >/dev/null 2>&1
+		sh "$SCRIPT_DIR/link-partner.sh" confirm || fail "peer traffic failed after reload"
 		RERR=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
 		[ "${RERR:-0}" -eq 0 ] && pass "datapath clean after reload" \
 			|| fail "$RERR errors after reload"

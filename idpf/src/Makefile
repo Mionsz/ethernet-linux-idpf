@@ -58,7 +58,6 @@ CFLAGS+=	-DLINUX_SUPPORT
 CFLAGS+=	-DCONFIG_EDT
 CFLAGS+=	-include ${.CURDIR}/idpf_type_compat.h
 CFLAGS+=	-include ${.CURDIR}/idpf_osdep.h
-CFLAGS+=	-include linux/bits.h
 CFLAGS+=	-include idpf_type.h
 CFLAGS+=	-include idpf_lan_pf_regs.h
 CFLAGS+=	-include idpf_lan_txrx.h

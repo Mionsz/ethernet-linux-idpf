@@ -1250,18 +1250,26 @@ idpf_calc_remaining_mmio_regs(struct idpf_adapter *adapter)
 	bar0_len = rman_get_size(adapter->dev_ops.static_reg_info[0]);
 
 	idpf_lan_mmio_regs_rel(adapter);
+	if (first->addr_len == 0 || second->addr_len == 0 ||
+	    first->addr_start > bar0_len ||
+	    first->addr_len > bar0_len - first->addr_start ||
+	    second->addr_start > bar0_len ||
+	    second->addr_len > bar0_len - second->addr_start)
+		return (EINVAL);
+
+	if (second->addr_start < first->addr_start) {
+		first = &hw->rstat;
+		second = &hw->mbx;
+	}
+	if (first->addr_len > second->addr_start - first->addr_start)
+		return (EINVAL);
+
 	hw->num_lan_regs = IDPF_MMIO_MAP_FALLBACK_MAX_REMAINING;
 	hw->lan_regs = malloc(hw->num_lan_regs * sizeof(*hw->lan_regs),
 	    M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (hw->lan_regs == NULL) {
 		hw->num_lan_regs = 0;
 		return (ENOMEM);
-	}
-
-	/* Swap in case rstat starts before the mailbox. */
-	if (second->addr_start < first->addr_start) {
-		first = &hw->rstat;
-		second = &hw->mbx;
 	}
 
 	/* Region preceding the first window. */
@@ -1303,8 +1311,9 @@ idpf_map_lan_mmio_regs(struct idpf_adapter *adapter)
 		if (hw->lan_regs[i].addr_len == 0)
 			continue;
 
-		if (hw->lan_regs[i].addr_start +
-		    hw->lan_regs[i].addr_len > bar0_len) {
+		if (hw->lan_regs[i].addr_start > bar0_len ||
+		    hw->lan_regs[i].addr_len >
+		    bar0_len - hw->lan_regs[i].addr_start) {
 			device_printf(idpf_adapter_to_dev(adapter),
 			    "LAN region %d [%#jx+%#jx] does not fit in BAR0\n",
 			    i, (uintmax_t)hw->lan_regs[i].addr_start,

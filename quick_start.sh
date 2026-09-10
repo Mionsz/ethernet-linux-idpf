@@ -11,7 +11,7 @@ log_dir=${IDPF_LOG_DIR:-"$repo_root/.quick-start"}
 host=${FBSD_HOST:-10.102.18.118}
 remote_dir=${IDPF_REMOTE_DIR:-/tmp/idpfbuild}
 interface=${IDPF_IFACE:-idpf0}
-peer=${TESTPEER:-192.168.211.99}
+peer=${TESTPEER:-192.168.211.2}
 install_dir=${IDPF_INSTALL_DIR:-/boot/modules}
 console_confirmed=${IDPF_CONSOLE_CONFIRMED:-0}
 want_build=0
@@ -167,7 +167,8 @@ local_test_build() {
 }
 
 local_test_run() {
-	make -C "$repo_root/idpf/test/user" run
+	make -C "$repo_root/idpf/test/user" run || return $?
+	sh "$repo_root/scripts/test-port-userspace.sh"
 }
 
 prepare_submodules() {
@@ -189,7 +190,7 @@ stage_remote_hardware_scripts() {
 
 run_local_hardware() {
 	local module="$repo_root/idpf/src/if_idpf.ko"
-	local script
+	(( failures == 0 )) || { record_stage hardware-suite SKIP "earlier stages failed"; return 1; }
 
 	# A stale copy in the kernel module path outranks nothing, but it is what
 	# a bare "kldload if_idpf" finds, so keep it identical to the build.
@@ -200,18 +201,13 @@ run_local_hardware() {
 		IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 \
 		"$repo_root/scripts/hw-attach-test.sh" || return $?
 
-	for script in idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
-		case "$script" in
-		idpf-validate.sh|idpf-datapath.sh|idpf-harden.sh|idpf-ptp-validate.sh)
-			run_stage "$script" env KMOD="$module" IDPF_ALLOW_HARDWARE=1 TESTPEER="$peer" PEER="$peer" "$repo_root/scripts/$script" "$interface" "$module"
-			;;
-		set_irq_affinity) run_stage "$script" "$repo_root/scripts/$script" -s "$interface" ;;
-		esac
-	done
+	run_stage hardware-validation env KMOD="$module" IDPF_IFACE="$interface" \
+		IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 TESTPEER="$peer" \
+		sh "$repo_root/scripts/hardware-suite.sh"
 }
 
 run_remote_hardware() {
-	local script
+	(( failures == 0 )) || { record_stage hardware-suite SKIP "earlier stages failed"; return 1; }
 	stage_remote_hardware_scripts || return 1
 
 	# A stale copy in the kernel module path outranks nothing, but it is what
@@ -222,15 +218,8 @@ run_remote_hardware() {
 	run_stage hw-attach-test.sh ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
 		"KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 '$remote_dir/scripts/hw-attach-test.sh'" || return $?
 
-	for script in idpf-validate.sh idpf-datapath.sh idpf-harden.sh idpf-ptp-validate.sh set_irq_affinity; do
-		if [[ $script == set_irq_affinity ]]; then
-			run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
-				"'$remote_dir/scripts/$script' -s '$interface'"
-			continue
-		fi
-		run_stage "$script" ssh -o BatchMode=yes -o ConnectTimeout=30 "$host" \
-			"PATH='$remote_dir/scripts':\$PATH KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 TESTPEER='$peer' PEER='$peer' '$remote_dir/scripts/$script' '$interface' '$remote_dir/idpf/src/if_idpf.ko'"
-	done
+	run_stage hardware-validation ssh -T -o BatchMode=yes -o ConnectTimeout=30 "$host" \
+		"env KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 TESTPEER='$peer' TESTIP='${TESTIP:-192.168.211.1/24}' PEER_IFACE='${PEER_IFACE:-ice0}' PEER_MODULE='${PEER_MODULE:-if_ice}' sh '$remote_dir/scripts/hardware-suite.sh'"
 }
 
 if (( on_freebsd )); then

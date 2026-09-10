@@ -804,6 +804,10 @@ struct idpf_adapter {
         u16                         num_avail_msix;
         u16                         num_msix_entries;
         struct resource                **msix_entries;
+        /* Control-plane vector ids, indexed as msix_entries.  These are the
+         * MSI-X table indices once idpf_intr_req() has remapped the table.
+         */
+        u16                         *vector_ids;
 
         struct idpf_adi_info             adi_info;
 

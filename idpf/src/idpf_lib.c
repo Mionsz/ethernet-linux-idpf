@@ -328,8 +328,8 @@ idpf_intr_rel(struct idpf_adapter *adapter)
 	for (i = 0; i < adapter->num_msix_entries; i++) {
 		if (adapter->msix_entries[i] == NULL)
 			continue;
-		bus_release_resource(dev, SYS_RES_IRQ, i + 1,
-		    adapter->msix_entries[i]);
+		bus_release_resource(dev, SYS_RES_IRQ,
+		    adapter->vector_ids[i] + 1, adapter->msix_entries[i]);
 		adapter->msix_entries[i] = NULL;
 	}
 	pci_release_msi(dev);
@@ -337,6 +337,8 @@ idpf_intr_rel(struct idpf_adapter *adapter)
 	idpf_send_dealloc_vectors_msg(adapter);
 	idpf_deinit_vector_stack(adapter);
 
+	free(adapter->vector_ids, M_DEVBUF);
+	adapter->vector_ids = NULL;
 	free(adapter->msix_entries, M_DEVBUF);
 	adapter->msix_entries = NULL;
 }
@@ -458,13 +460,59 @@ idpf_mb_intr_init(struct idpf_adapter *adapter)
 }
 
 /**
+ * idpf_remap_msix_vectors - point the MSI-X table at the granted vector ids
+ * @adapter: driver private data
+ * @vecids: control-plane vector ids, in allocation order
+ * @count: number of entries in @vecids
+ *
+ * pci_alloc_msix() assigns the allocated messages to the first @count table
+ * entries, but the control plane hands out absolute vector ids that are not
+ * contiguous from zero.  Rewriting the layout makes a vector's SYS_RES_IRQ rid
+ * its control-plane id plus one, so the device signals the vectors the driver
+ * actually listens on.  Must run before any IRQ resource is claimed.
+ *
+ * Return: 0 on success, otherwise an errno.
+ */
+static int
+idpf_remap_msix_vectors(struct idpf_adapter *adapter, const u16 *vecids,
+    int count)
+{
+	device_t dev = idpf_adapter_to_dev(adapter);
+	u_int *table;
+	u16 max_id = 0;
+	int i, err;
+
+	for (i = 0; i < count; i++)
+		if (vecids[i] > max_id)
+			max_id = vecids[i];
+
+	table = malloc((max_id + 1) * sizeof(*table), M_DEVBUF,
+	    M_NOWAIT | M_ZERO);
+	if (table == NULL)
+		return (ENOMEM);
+
+	for (i = 0; i < count; i++)
+		table[vecids[i]] = i + 1;
+
+	err = pci_remap_msix(dev, max_id + 1, table);
+	if (err != 0)
+		device_printf(dev,
+		    "failed to remap %d MSI-X table entries: %d\n",
+		    max_id + 1, err);
+
+	free(table, M_DEVBUF);
+
+	return (err);
+}
+
+/**
  * idpf_intr_req - acquire the function's MSI-X vectors
  * @adapter: driver private data
  *
  * The control plane is asked for the data queue vectors first, then the OS is
- * asked for the matching MSI-X allocation.  Every vector is claimed as an IRQ
- * resource here rather than by iflib, because the pool is shared by all the
- * vports on this function.
+ * asked for the matching MSI-X allocation.  The mailbox vector is claimed as
+ * an IRQ resource here rather than by iflib, because the pool is shared by all
+ * the vports on this function.
  *
  * Return: 0 on success, otherwise an errno.
  */
@@ -505,6 +553,29 @@ idpf_intr_req(struct idpf_adapter *adapter)
 	}
 	num_lan_vecs = actual_vecs;
 
+	adapter->mb_vector.v_idx = le16toh(adapter->caps.mailbox_vector_id);
+
+	vecids = malloc(actual_vecs * sizeof(*vecids), M_DEVBUF,
+	    M_NOWAIT | M_ZERO);
+	if (vecids == NULL) {
+		err = ENOMEM;
+		goto free_irq;
+	}
+
+	num_vec_ids = idpf_get_vec_ids(adapter, vecids, actual_vecs,
+	    &adapter->req_vec_chunks->vchunks);
+	if (num_vec_ids < actual_vecs) {
+		err = EINVAL;
+		goto free_vecids;
+	}
+
+	err = idpf_remap_msix_vectors(adapter, vecids, actual_vecs);
+	if (err != 0)
+		goto free_vecids;
+
+	adapter->vector_ids = vecids;
+	vecids = NULL;
+
 	adapter->msix_entries = malloc(num_lan_vecs *
 	    sizeof(*adapter->msix_entries), M_DEVBUF, M_NOWAIT | M_ZERO);
 	if (adapter->msix_entries == NULL) {
@@ -517,7 +588,7 @@ idpf_intr_req(struct idpf_adapter *adapter)
 	 * per-queue IRQ resources in ifdi_msix_intr_assign(), and claiming
 	 * them first makes that allocation fail with a busy rid.
 	 */
-	rid = IDPF_MBX_VEC_IDX + 1;
+	rid = adapter->vector_ids[IDPF_MBX_VEC_IDX] + 1;
 	adapter->msix_entries[IDPF_MBX_VEC_IDX] = bus_alloc_resource_any(dev,
 	    SYS_RES_IRQ, &rid, RF_ACTIVE | RF_SHAREABLE);
 	if (adapter->msix_entries[IDPF_MBX_VEC_IDX] == NULL) {
@@ -525,22 +596,6 @@ idpf_intr_req(struct idpf_adapter *adapter)
 		    "failed to allocate the mailbox IRQ resource\n");
 		err = ENXIO;
 		goto free_msix;
-	}
-
-	adapter->mb_vector.v_idx = le16toh(adapter->caps.mailbox_vector_id);
-
-	vecids = malloc(actual_vecs * sizeof(*vecids), M_DEVBUF,
-	    M_NOWAIT | M_ZERO);
-	if (vecids == NULL) {
-		err = ENOMEM;
-		goto free_msix;
-	}
-
-	num_vec_ids = idpf_get_vec_ids(adapter, vecids, actual_vecs,
-	    &adapter->req_vec_chunks->vchunks);
-	if (num_vec_ids < actual_vecs) {
-		err = EINVAL;
-		goto free_vecids;
 	}
 
 	/*
@@ -552,31 +607,32 @@ idpf_intr_req(struct idpf_adapter *adapter)
 
 	err = idpf_init_vector_stack(adapter);
 	if (err != 0)
-		goto free_vecids;
+		goto free_msix;
 
 	err = idpf_mb_intr_init(adapter);
 	if (err != 0)
 		goto deinit_vec_stack;
 
 	idpf_mb_irq_enable(adapter);
-	free(vecids, M_DEVBUF);
 
 	return (0);
 
 deinit_vec_stack:
 	idpf_deinit_vector_stack(adapter);
-free_vecids:
-	free(vecids, M_DEVBUF);
 free_msix:
 	for (i = 0; i < num_lan_vecs; i++) {
 		if (adapter->msix_entries[i] == NULL)
 			continue;
-		bus_release_resource(dev, SYS_RES_IRQ, i + 1,
-		    adapter->msix_entries[i]);
+		bus_release_resource(dev, SYS_RES_IRQ,
+		    adapter->vector_ids[i] + 1, adapter->msix_entries[i]);
 	}
 	free(adapter->msix_entries, M_DEVBUF);
 	adapter->msix_entries = NULL;
+free_vecids:
+	free(vecids, M_DEVBUF);
 free_irq:
+	free(adapter->vector_ids, M_DEVBUF);
+	adapter->vector_ids = NULL;
 	pci_release_msi(dev);
 send_dealloc_vecs:
 	idpf_send_dealloc_vectors_msg(adapter);
@@ -2576,7 +2632,9 @@ idpf_if_msix_intr_assign(if_ctx_t ctx, int msix __unused)
 		return (ENXIO);
 
 	for (i = 0; i < rsrc->num_q_vectors; i++) {
-		rid = rsrc->q_vector_idxs[i] + 1;
+		if (rsrc->q_vector_idxs[i] >= adapter->num_msix_entries)
+			return (EINVAL);
+		rid = adapter->vector_ids[rsrc->q_vector_idxs[i]] + 1;
 
 		snprintf(irq_name, sizeof(irq_name), "rxq%d", i);
 		err = iflib_irq_alloc_generic(ctx, &rsrc->q_vectors[i].que_irq,

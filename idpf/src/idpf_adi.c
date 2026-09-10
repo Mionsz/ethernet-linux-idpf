@@ -33,10 +33,7 @@
  * @adapter: driver private data
  * @vec_index: driver-relative vector index
  *
- * FreeBSD allocates MSI-X vectors as IRQ resources whose rid is the 1-based
- * vector number, so the hardware index the control plane expects is the rid
- * minus one.  Only the mailbox IRQ resource belongs to the driver -- iflib
- * owns the queue vectors -- so the index is derived rather than read back.
+ * Vector-pool indexes are not control-plane vector identifiers.
  *
  * Return: the hardware vector index, or -1 when the vector is out of range.
  */
@@ -44,10 +41,11 @@ static int
 idpf_adi_hw_vector(struct idpf_adapter *adapter, u16 vec_index)
 {
 
-	if (vec_index >= adapter->num_msix_entries)
+	if (adapter->vector_ids == NULL ||
+	    vec_index >= adapter->num_msix_entries)
 		return (-1);
 
-	return (vec_index);
+	return (adapter->vector_ids[vec_index]);
 }
 
 /**

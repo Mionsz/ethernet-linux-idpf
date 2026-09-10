@@ -2125,6 +2125,12 @@ idpf_vport_intr_map_vector_to_qs(struct idpf_q_vec_rsrc *rsrc)
 	unsigned int i, j;
 	u16 qv_idx = 0, bufq_vidx = 0;
 
+	for (i = 0; i < rsrc->num_q_vectors; i++) {
+		rsrc->q_vectors[i].num_rxq = 0;
+		rsrc->q_vectors[i].num_txq = 0;
+		rsrc->q_vectors[i].num_bufq = 0;
+	}
+
 	for (i = 0; i < rsrc->num_rxq_grp; i++) {
 		struct idpf_rxq_group *rx_qgrp = &rsrc->rxq_grps[i];
 		u16 num_rxq;
@@ -2341,8 +2347,13 @@ idpf_vport_intr_init(struct idpf_vport *vport, struct idpf_q_vec_rsrc *rsrc)
 	if (rsrc->q_vectors == NULL || rsrc->q_vector_idxs == NULL)
 		return (EINVAL);
 
-	for (i = 0; i < rsrc->num_q_vectors; i++)
-		rsrc->q_vectors[i].v_idx = rsrc->q_vector_idxs[i];
+	for (i = 0; i < rsrc->num_q_vectors; i++) {
+		if (rsrc->q_vector_idxs[i] >= adapter->num_msix_entries)
+			return (EINVAL);
+		/* The control plane addresses vectors by absolute id. */
+		rsrc->q_vectors[i].v_idx =
+		    adapter->vector_ids[rsrc->q_vector_idxs[i]];
+	}
 
 	idpf_vport_intr_map_vector_to_qs(rsrc);
 

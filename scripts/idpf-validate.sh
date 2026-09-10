@@ -21,8 +21,9 @@ KMOD="${2:-/tmp/idpfbuild/idpf/src/if_idpf.ko}"
 OUTDIR="${3:-/tmp/idpf_validate_$(date +%Y%m%d_%H%M%S)}"
 
 TESTIP="${TESTIP:-192.168.211.1/24}"
-TESTPEER="${TESTPEER:-192.168.211.99}"
-RX_WINDOW="${RX_WINDOW:-10}"
+TESTPEER="${TESTPEER:-192.168.211.2}"
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export IDPF_IFACE="$IFACE" TESTIP TESTPEER
 CYCLES="${CYCLES:-3}"
 
 mkdir -p "$OUTDIR" || exit 1
@@ -50,9 +51,6 @@ case "${IDPF_CONSOLE_CONFIRMED:-}" in
 *) echo "RESULT: SKIP - set IDPF_CONSOLE_CONFIRMED=1 after verifying console access"; exit 2 ;;
 esac
 
-# Counter column 5 is Ibytes, column 8 is Obytes in netstat -I -b output.
-rx_bytes() { netstat -I "$IFACE" -b 2>/dev/null | awk 'NR==2 {print $8}'; }
-tx_bytes() { netstat -I "$IFACE" -b 2>/dev/null | awk 'NR==2 {print $11}'; }
 iface_up() { ifconfig "$IFACE" 2>/dev/null | grep -q "<UP,"; }
 
 section "1. Environment"
@@ -121,7 +119,7 @@ sleep 8
 if ifconfig "$IFACE" | grep -q "status: active"; then
 	pass "link active"
 elif ifconfig "$IFACE" | grep -q "status: no carrier"; then
-	skip "link reports no carrier - check the cable or link partner"
+	fail "link reports no carrier - check the cable or link partner"
 else
 	fail "no link status after bring-up"
 fi
@@ -131,23 +129,11 @@ section "5. Datapath"
 ifconfig "$IFACE" inet "$TESTIP" 2>>"$LOG"
 sleep 2
 
-RX0=$(rx_bytes)
-sleep "$RX_WINDOW"
-RX1=$(rx_bytes)
-if [ "${RX1:-0}" -gt "${RX0:-0}" ] 2>/dev/null; then
-	pass "RX received $((RX1-RX0)) bytes in ${RX_WINDOW}s"
+if sh "$SCRIPT_DIR/link-partner.sh" confirm >>"$LOG" 2>&1; then
+	pass "bidirectional delivery with verified link partner"
 else
-	skip "no RX traffic in ${RX_WINDOW}s (quiet wire?)"
-fi
-
-TX0=$(tx_bytes)
-ping -c 3 -t 2 "$TESTPEER" >/dev/null 2>&1
-sleep 2
-TX1=$(tx_bytes)
-if [ "${TX1:-0}" -gt "${TX0:-0}" ] 2>/dev/null; then
-	pass "TX transmitted $((TX1-TX0)) bytes"
-else
-	fail "TX counters did not advance"
+	fail "link partner confirmation failed; no valid datapath result"
+	exit 1
 fi
 
 ERRS=$(netstat -I "$IFACE" -b | awk 'NR==2 {print $6+$10}')
@@ -170,6 +156,11 @@ while [ "$i" -le "$CYCLES" ]; do
 	sleep 5
 	if ! iface_up; then
 		fail "interface did not come up on cycle $i"
+		CYCLE_OK=0
+		break
+	fi
+	if ! sh "$SCRIPT_DIR/link-partner.sh" confirm >>"$LOG" 2>&1; then
+		fail "bidirectional traffic failed on cycle $i"
 		CYCLE_OK=0
 		break
 	fi
@@ -197,13 +188,10 @@ done
 ifconfig "$IFACE" mtu 1500 2>/dev/null
 sleep 2
 ifconfig "$IFACE" inet "$TESTIP" 2>/dev/null
-TX0=$(tx_bytes)
-ping -c 2 -t 2 "$TESTPEER" >/dev/null 2>&1
-sleep 2
-if [ "$(tx_bytes)" -gt "${TX0:-0}" ] 2>/dev/null; then
-	pass "datapath still transmits after MTU changes"
+if sh "$SCRIPT_DIR/link-partner.sh" confirm >>"$LOG" 2>&1; then
+	pass "bidirectional traffic survives MTU changes"
 else
-	fail "datapath stopped transmitting after MTU changes"
+	fail "bidirectional traffic failed after MTU changes"
 fi
 
 section "8. Driver-private ioctl"
@@ -219,27 +207,12 @@ else
 	skip "no /tmp/idpf_priv_test helper built"
 fi
 
-section "9. Detach and resource release"
-# Regression: the queue interrupts were never freed, so pci_release_msi()
-# failed and the MSI-X allocation leaked into the next attach.
-if kldunload if_idpf >>"$LOG" 2>&1; then
-	pass "kldunload"
-else
-	fail "kldunload"
-fi
-sleep 2
-if dmesg | tail -20 | grep -qi "leaked"; then
-	fail "device leaked resources on detach"
-	dmesg | tail -20 | grep -i leaked >> "$LOG"
-else
-	pass "no leaked resources reported"
-fi
-
-section "10. PTP negotiation"
+section "9. PTP negotiation"
 # The PTP capability path is exercised on every attach whether or not the
 # control plane grants it, so these assert behaviour rather than skipping.
 PTPLINE=$(grep -i "PTP:" "$OUTDIR/dmesg-attach.txt" 2>/dev/null | tail -1)
-PTPNODE="dev.${IFACE%%[0-9]*}.0.ptp_clock_ns"
+DRIVER=${IFACE%%[0-9]*}
+PTPNODE="dev.$DRIVER.${IFACE#"$DRIVER"}.ptp_clock_ns"
 
 if [ -z "$PTPLINE" ]; then
 	fail "attach reported no PTP status at all"
@@ -275,6 +248,20 @@ else
 			fail "device clock did not advance ($A -> $B)"
 		fi
 	fi
+fi
+
+section "10. Detach and resource release"
+if kldunload if_idpf >>"$LOG" 2>&1; then
+	pass "kldunload"
+else
+	fail "kldunload"
+fi
+sleep 2
+if dmesg | tail -20 | grep -qi "leaked"; then
+	fail "device leaked resources on detach"
+	dmesg | tail -20 | grep -i leaked >> "$LOG"
+else
+	pass "no leaked resources reported"
 fi
 
 section "Summary"

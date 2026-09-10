@@ -3,18 +3,7 @@
 # idpf-datapath.sh - packet and data transfer tests for the FreeBSD IDPF
 # driver.
 #
-# What can and cannot be proven on this setup
-# -------------------------------------------
-# TX is provable at wire level: dev.idpf.N.stats.* are control-plane
-# counters, so a delta there means the frame reached the device, not just
-# the host stack.  Every TX assertion below compares a hardware delta
-# against what was sent.
-#
-# RX from an external sender is NOT provable here: the control plane does
-# not offer VIRTCHNL2_CAP_LOOPBACK (other_caps bit 19 is clear) and the
-# link has no peer that transmits.  RX stages therefore report SKIP with
-# the observed counters rather than a fabricated PASS.  They become real
-# assertions the moment a link partner exists.
+# Hardware counters supplement, but never replace, verified peer delivery.
 #
 # shellcheck disable=SC2015
 # Run on the FreeBSD target as root:
@@ -25,7 +14,10 @@ set -u
 IFACE="${1:-idpf0}"
 KMOD="${2:-/tmp/idpfbuild/idpf/src/if_idpf.ko}"
 TESTIP="${TESTIP:-192.168.211.1/24}"
-PEER="${PEER:-192.168.211.99}"
+PEER="${TESTPEER:-${PEER:-192.168.211.2}}"
+PEER_IFACE=${PEER_IFACE:-ice0}
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+export IDPF_IFACE="$IFACE" TESTIP TESTPEER="$PEER"
 TEST_BROADCAST="${TEST_BROADCAST:-192.168.211.255}"
 BURST="${BURST:-200}"
 
@@ -68,14 +60,22 @@ ifconfig "$IFACE" inet "$TESTIP" alias 2>/dev/null
 ifconfig "$IFACE" up
 sleep 3
 
-# Without this the peer never resolves, every IP packet is dropped before it
-# reaches the device, and the size tests below would only ever measure ARP.
-arp -s "$PEER" 02:00:00:00:be:ef >/dev/null 2>&1
+sh "$SCRIPT_DIR/link-partner.sh" confirm || exit 1
 
 if [ "$(sysctl -n "dev.$DRIVER.$UNIT.stats.tx_bytes" 2>/dev/null || echo missing)" = "missing" ]; then
 	echo "[FAIL] hardware counters not published; cannot verify the wire"
 	echo "RESULT: 1 failure(s)"; exit 1
 fi
+
+OLDMTU=$(ifconfig "$IFACE" | sed -n 's/.*mtu \([0-9]*\).*/\1/p')
+PEERMTU=$(sh "$SCRIPT_DIR/link-partner.sh" exec ifconfig "$PEER_IFACE" | sed -n 's/.*mtu \([0-9]*\).*/\1/p')
+restore_mtu() {
+	ifconfig "$IFACE" mtu "$OLDMTU" || return 1
+	sh "$SCRIPT_DIR/link-partner.sh" exec ifconfig "$PEER_IFACE" mtu "$PEERMTU"
+}
+trap 'rc=$?; restore_mtu || rc=1; exit "$rc"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 # ------------------------------------------------------- packet size sweep
 section "1. Packet size sweep (hardware TX counters)"
@@ -84,7 +84,7 @@ for SZ in 8 64 512 1024 1472; do
 	B0=$(hw tx_bytes)
 	P0=$(hw tx_unicast)
 	Q0=$(hw tx_broadcast)
-	ping -c 5 -i 0.2 -s "$SZ" -t 5 "$PEER" >/dev/null 2>&1
+	ping -n -S "${TESTIP%/*}" -c 5 -i 0.2 -s "$SZ" -t 5 "$PEER" >/dev/null 2>&1 || fail "size $SZ: peer did not reply"
 	sleep 2
 	B1=$(hw tx_bytes)
 	P1=$(hw tx_unicast)
@@ -103,13 +103,14 @@ done
 
 # ------------------------------------------------------------ burst / load
 section "2. Sustained transmit ($BURST frames)"
+sh "$SCRIPT_DIR/link-partner.sh" confirm || exit 1
 E0=$(errs)
 B0=$(hw tx_bytes)
 D0=$(hw tx_discards)
 X0=$(hw tx_errors)
 i=0
 while [ $i -lt "$BURST" ]; do
-	ping -c 1 -t 1 "$PEER" >/dev/null 2>&1
+	ping -n -S "${TESTIP%/*}" -c 1 -t 2 "$PEER" >/dev/null 2>&1 || fail "lost reply in burst packet $i"
 	i=$((i+1))
 done
 sleep 3
@@ -128,6 +129,7 @@ DE=$(( $(errs) - E0 ))
 
 # --------------------------------------------------- broadcast / multicast
 section "3. Broadcast and multicast classification"
+sh "$SCRIPT_DIR/link-partner.sh" confirm || exit 1
 Q0=$(hw tx_broadcast)
 # The subnet broadcast address is unambiguously an L2 broadcast, unlike an
 # ARP request whose emission depends on cache state.
@@ -149,12 +151,13 @@ fi
 
 # --------------------------------------------------------------- jumbo MTU
 section "4. Jumbo frames"
-OLDMTU=$(ifconfig "$IFACE" | sed -n 's/.*mtu \([0-9]*\).*/\1/p')
+sh "$SCRIPT_DIR/link-partner.sh" confirm || exit 1
 if ifconfig "$IFACE" mtu 9000 2>/dev/null; then
+	sh "$SCRIPT_DIR/link-partner.sh" exec ifconfig "$PEER_IFACE" mtu 9000 || exit 1
 	sleep 2
 	B0=$(hw tx_bytes)
 	X0=$(hw tx_errors)
-	ping -c 5 -i 0.2 -s 8000 -t 5 "$PEER" >/dev/null 2>&1
+	ping -n -D -S "${TESTIP%/*}" -c 5 -i 0.2 -s 8000 -t 5 "$PEER" >/dev/null 2>&1 || fail "jumbo peer delivery failed"
 	sleep 2
 	DB=$(( $(hw tx_bytes) - B0 ))
 	DX=$(( $(hw tx_errors) - X0 ))
@@ -162,7 +165,7 @@ if ifconfig "$IFACE" mtu 9000 2>/dev/null; then
 		|| fail "jumbo TX delta too small ($DB bytes)"
 	[ "$DX" -eq 0 ] && pass "no TX errors with jumbo frames" \
 		|| fail "$DX TX errors with jumbo frames"
-	ifconfig "$IFACE" mtu "$OLDMTU" 2>/dev/null
+	restore_mtu || exit 1
 	sleep 2
 else
 	skip "device refused MTU 9000"
@@ -172,35 +175,30 @@ fi
 section "5. UDP data transfer"
 B0=$(hw tx_bytes)
 X0=$(hw tx_errors)
-python3 - "$PEER" <<'EOF' >/dev/null 2>&1 || true
-import socket, sys
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-payload = b'x' * 1400
-for _ in range(500):
-    try:
-        s.sendto(payload, (sys.argv[1], 9999))
-    except OSError:
-        pass
-EOF
+if "${PYTHON:-python3}" "$SCRIPT_DIR/peer-udp.py"; then
+	pass "UDP payloads received and echoed intact by peer"
+else
+	fail "UDP peer delivery failed"
+fi
 sleep 3
 DB=$(( $(hw tx_bytes) - B0 ))
 DX=$(( $(hw tx_errors) - X0 ))
 if [ "$DB" -gt 100000 ]; then
 	pass "UDP stream moved $DB bytes on the wire"
 elif [ "$DB" -gt 0 ]; then
-	pass "UDP stream moved $DB bytes (ARP unresolved limits the count)"
+	fail "UDP hardware delta too small ($DB bytes)"
 else
-	skip "no UDP TX delta (peer unresolved, nothing queued)"
+	fail "no UDP TX delta"
 fi
 [ "$DX" -eq 0 ] && pass "no TX errors during UDP stream" \
 	|| fail "$DX TX errors during UDP stream"
 
 # ------------------------------------------------- counter self-consistency
 section "6. Counter consistency"
-arp -s "$PEER" 02:00:00:00:be:ef >/dev/null 2>&1
+sh "$SCRIPT_DIR/link-partner.sh" confirm || exit 1
 O0=$(ifc 11)
 B0=$(hw tx_bytes)
-ping -c 20 -i 0.05 -s 512 -t 5 "$PEER" >/dev/null 2>&1
+ping -n -S "${TESTIP%/*}" -c 20 -i 0.05 -s 512 -t 5 "$PEER" >/dev/null 2>&1 || fail "counter test peer delivery failed"
 sleep 3
 DO=$(( $(ifc 11) - O0 ))
 DB=$(( $(hw tx_bytes) - B0 ))
@@ -221,23 +219,18 @@ RB0=$(hw rx_bytes)
 RE0=$(hw rx_errors)
 RD0=$(hw rx_discards)
 I0=$(ifc 5)
-MAC=$(ifconfig "$IFACE" | awk '/ether/{print $2}')
-timeout 15 tcpdump -i "$IFACE" -n -c 5 "not ether src $MAC" >/tmp/idpf_rx.txt 2>&1
+if sh "$SCRIPT_DIR/link-partner.sh" confirm; then
+	pass "receive path delivered verified peer traffic"
+else
+	fail "receive path failed with transmitting peer"
+fi
 sleep 1
 DRB=$(( $(hw rx_bytes) - RB0 ))
 DI=$(( $(ifc 5) - I0 ))
 DRE=$(( $(hw rx_errors) - RE0 ))
 DRD=$(( $(hw rx_discards) - RD0 ))
-OFFBOX=$(awk '/packets captured/ {print $1}' /tmp/idpf_rx.txt)
-
-echo "off-box frames captured ${OFFBOX:-0}, hardware rx_bytes +$DRB, ifnet Ipkts +$DI"
-# Ipkts counts frames the stack looped back to itself, so it cannot stand in
-# for reception; only the capture filtered on a foreign source MAC can.
-if [ "${OFFBOX:-0}" -gt 0 ]; then
-	pass "received ${OFFBOX} frames from off-box"
-else
-	skip "no off-box frames in 15s: link has no transmitting peer"
-fi
+echo "hardware rx_bytes +$DRB, ifnet Ipkts +$DI"
+[ "$DRB" -gt 0 ] && [ "$DI" -ge 10 ] || fail "RX counters did not reflect confirmed traffic"
 [ "$DRE" -eq 0 ] && pass "no RX errors" || fail "$DRE RX errors"
 [ "$DRD" -eq 0 ] && pass "no RX discards" || fail "$DRD RX discards"
 
@@ -247,7 +240,7 @@ ifconfig "$IFACE" | grep -q "UP" && pass "interface still up" \
 	|| fail "interface down after traffic"
 [ "$(ifconfig "$IFACE" | awk '/status:/{print $2}')" = "active" ] \
 	&& pass "link still active" || fail "link not active after traffic"
-ping -c 3 -t 2 "$PEER" >/dev/null 2>&1
+sh "$SCRIPT_DIR/link-partner.sh" confirm || fail "post-traffic peer confirmation failed"
 FE=$(errs)
 [ "${FE:-0}" -eq 0 ] && pass "interface error counters still zero" \
 	|| fail "$FE interface errors after the run"

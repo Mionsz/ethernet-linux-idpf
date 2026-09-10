@@ -300,25 +300,34 @@ test_deinit_clears_registers_on_simics(void)
 }
 
 static void
-test_deinit_clears_registers_on_silicon(void)
+test_deinit_preserves_registers_on_silicon(void)
 {
 	struct fixture f;
+	u32 asq_len, asq_bal, asq_bah, asq_head, arq_len, arq_bal;
 
 	if (fixture_setup(&f) != 0) {
 		EXPECT(false, "fixture setup failed");
 		return;
 	}
 
+	asq_len = reg_get(&f, ASQ_LEN);
+	asq_bal = reg_get(&f, ASQ_BAL);
+	asq_bah = reg_get(&f, ASQ_BAH);
+	asq_head = reg_get(&f, ASQ_HEAD);
+	arq_len = reg_get(&f, ARQ_LEN);
+	arq_bal = reg_get(&f, ARQ_BAL);
+
 	/* Neither Simics nor EMR, so silicon. */
 	f.hw.subsystem_device_id = 0;
 	idpf_ctlq_deinit(&f.hw);
 
-	EXPECT_EQ(reg_get(&f, ASQ_LEN), 0);
-	EXPECT_EQ(reg_get(&f, ASQ_BAL), 0);
-	EXPECT_EQ(reg_get(&f, ASQ_BAH), 0);
-	EXPECT_EQ(reg_get(&f, ASQ_HEAD), 0);
-	EXPECT_EQ(reg_get(&f, ARQ_LEN), 0);
-	EXPECT_EQ(reg_get(&f, ARQ_BAL), 0);
+	/* On silicon the function reset clears these, not the driver. */
+	EXPECT_EQ(reg_get(&f, ASQ_LEN), asq_len);
+	EXPECT_EQ(reg_get(&f, ASQ_BAL), asq_bal);
+	EXPECT_EQ(reg_get(&f, ASQ_BAH), asq_bah);
+	EXPECT_EQ(reg_get(&f, ASQ_HEAD), asq_head);
+	EXPECT_EQ(reg_get(&f, ARQ_LEN), arq_len);
+	EXPECT_EQ(reg_get(&f, ARQ_BAL), arq_bal);
 
 	idpf_test_kfree(f.regfile);
 }
@@ -914,8 +923,8 @@ static const struct test_case cases[] = {
 	{ "init_programs_registers", test_init_programs_registers },
 	{ "deinit_clears_registers_on_simics",
 	  test_deinit_clears_registers_on_simics },
-	{ "deinit_clears_registers_on_silicon",
-	  test_deinit_clears_registers_on_silicon },
+	{ "deinit_preserves_registers_on_silicon",
+	  test_deinit_preserves_registers_on_silicon },
 	{ "send_writes_descriptor", test_send_writes_descriptor },
 	{ "send_rejects_missing_payload", test_send_rejects_missing_payload },
 	{ "send_full_ring", test_send_full_ring },

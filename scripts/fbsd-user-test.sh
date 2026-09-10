@@ -5,38 +5,47 @@
 # failed process rather than a wedged machine. Requires no /usr/src.
 #
 # Usage: [FBSD_HOST=user@host] fbsd-user-test.sh [error-lines-to-show]
-set -e
+set -eu
 
 HOST=${FBSD_HOST:-10.102.18.118}
 LINES=${1:-40}
-LOCAL_SRC=/opt/ethernet-linux-idpf/idpf
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 REMOTE_DIR=${IDPF_REMOTE_DIR:-/tmp/idpfuser}
 RUN_TESTS=${RUN_TESTS:-1}
 
-cd "$LOCAL_SRC"
-tar -czf /tmp/idpf-user.tgz src shared test/user
-scp -q -o BatchMode=yes -o ConnectTimeout=30 /tmp/idpf-user.tgz "$HOST:/tmp/"
+case "$REMOTE_DIR:$LINES:$RUN_TESTS" in *[!a-zA-Z0-9_./:-]*) echo 'Invalid build path/options' >&2; exit 1 ;; esac
+ARCHIVE=$(mktemp /tmp/idpf-user.XXXXXX.tgz)
+trap 'rm -f "$ARCHIVE"' EXIT
+tar -C "$REPO_ROOT" --exclude='.git' --exclude='*.o' --exclude='test_ctlq' \
+	--exclude='idpf/src/machine' --exclude='idpf/src/x86' --exclude='idpf/src/i386' \
+	-czf "$ARCHIVE" idpf/src idpf/shared idpf/test/user scripts
+scp -q -o BatchMode=yes -o ConnectTimeout=30 "$ARCHIVE" "$HOST:$ARCHIVE"
 
-ssh -o BatchMode=yes -o ConnectTimeout=30 "$HOST" \
-	"RUN_TESTS='$RUN_TESTS' REMOTE_DIR='$REMOTE_DIR' LINES='$LINES' sh -s" <<'REMOTE_EOF'
-	rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR &&
-	tar -xzf /tmp/idpf-user.tgz -C $REMOTE_DIR &&
-	cd $REMOTE_DIR/test/user &&
-	gmake --version >/dev/null 2>&1 && MAKE=gmake || MAKE=make
-	$MAKE > /tmp/idpf-user-build.log 2>&1
-	rc=$?
+ssh -T -o BatchMode=yes -o ConnectTimeout=30 "$HOST" \
+	"env RUN_TESTS='$RUN_TESTS' REMOTE_DIR='$REMOTE_DIR' ARCHIVE='$ARCHIVE' LINES='$LINES' sh -s" <<'REMOTE_EOF'
+	set -eu
+	BUILD=$(mktemp -d "$REMOTE_DIR.XXXXXX")
+	tar -xzf "$ARCHIVE" -C "$BUILD"
+	rm -f "$ARCHIVE"
+	cd "$BUILD/idpf/test/user"
+	if command -v gmake >/dev/null 2>&1; then MAKE=gmake; else MAKE=make; fi
+	rc=0
+	$MAKE > "$BUILD/build.log" 2>&1 || rc=$?
 	echo "=== build exit $rc ==="
 	if [ $rc -ne 0 ]; then
-		grep -n 'error:' /tmp/idpf-user-build.log | head -$LINES
+		grep -n 'error:' "$BUILD/build.log" | head -"$LINES"
 		echo '--- distinct error kinds ---'
-		grep -o 'error: .*' /tmp/idpf-user-build.log |
+		grep -o 'error: .*' "$BUILD/build.log" |
 		    sed 's/[0-9][0-9]*/N/g' | sort -u | head -25
 		exit 1
 	fi
 	if [ "$RUN_TESTS" = 1 ]; then
 		echo '=== run ==='
 		./test_ctlq
+		sh "$BUILD/scripts/test-port-userspace.sh"
 	else
 		echo '=== run skipped ==='
 	fi
+	echo "artifacts: $BUILD"
 REMOTE_EOF

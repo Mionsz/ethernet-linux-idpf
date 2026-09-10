@@ -354,10 +354,14 @@ idpf_alloc_taskqueues(struct idpf_adapter *adapter)
 	callout_init(&adapter->serv_task, 1);
 	callout_init(&adapter->stats_task, 1);
 	callout_init(&adapter->mbx_poll_task, 1);
+	TASK_INIT(&adapter->mbx_task, 0, idpf_mbx_task, adapter);
+	TASK_INIT(&adapter->stats_deferred, 0, idpf_statistics_task, adapter);
 
 	err = idpf_alloc_taskqueue(adapter, &adapter->init_wq, "init");
 	if (err != 0)
 		goto fail;
+	TIMEOUT_TASK_INIT(adapter->init_wq, &adapter->init_task, 0,
+	    idpf_init_task, adapter);
 	err = idpf_alloc_taskqueue(adapter, &adapter->serv_wq, "service");
 	if (err != 0)
 		goto fail;
@@ -374,12 +378,8 @@ idpf_alloc_taskqueues(struct idpf_adapter *adapter)
 	if (err != 0)
 		goto fail;
 
-	TIMEOUT_TASK_INIT(adapter->init_wq, &adapter->init_task, 0,
-	    idpf_init_task, adapter);
 	TIMEOUT_TASK_INIT(adapter->vc_event_wq, &adapter->vc_event_task, 0,
 	    idpf_vc_event_task, adapter);
-	TASK_INIT(&adapter->mbx_task, 0, idpf_mbx_task, adapter);
-	TASK_INIT(&adapter->stats_deferred, 0, idpf_statistics_task, adapter);
 
 	return (0);
 
