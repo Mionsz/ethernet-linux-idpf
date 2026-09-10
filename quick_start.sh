@@ -36,6 +36,7 @@ Usage: ./quick_start.sh [options]
   --help                 Show this help.
 
 Environment: FBSD_HOST, IDPF_REMOTE_DIR, IDPF_IFACE, TESTPEER, TESTIP,
+PEER_IFACE (default ice0), PEER_MODULE (default if_ice), PYTHON,
 IDPF_INSTALL_DIR, IDPF_LOG_DIR, IDPF_CONSOLE_CONFIRMED, PCI_BUS, and PCI_MATCH.
 EOF
 }
@@ -89,13 +90,17 @@ run_stage() {
 	shift
 	local logfile="$log_dir/${#stage_names[@]}-${name//[^A-Za-z0-9_.-]/_}.log"
 	local rc
+	local -a pipe_status
 
 	printf '\n===== %s =====\n' "$name"
-	"$@" > >(tee "$logfile") 2>&1
-	rc=$?
+	"$@" 2>&1 | tee "$logfile"
+	pipe_status=("${PIPESTATUS[@]}")
+	rc=${pipe_status[0]}
+	if (( pipe_status[1] != 0 )); then
+		rc=1
+	fi
 	case "$rc" in
 	0) record_stage "$name" PASS "log: $logfile" ;;
-	2) record_stage "$name" SKIP "precondition not met; log: $logfile" ;;
 	*) record_stage "$name" FAIL "exit $rc; log: $logfile"; failures=$((failures + 1)) ;;
 	esac
 
@@ -219,7 +224,7 @@ run_remote_hardware() {
 		"KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 '$remote_dir/scripts/hw-attach-test.sh'" || return $?
 
 	run_stage hardware-validation ssh -T -o BatchMode=yes -o ConnectTimeout=30 "$host" \
-		"env KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 TESTPEER='$peer' TESTIP='${TESTIP:-192.168.211.1/24}' PEER_IFACE='${PEER_IFACE:-ice0}' PEER_MODULE='${PEER_MODULE:-if_ice}' sh '$remote_dir/scripts/hardware-suite.sh'"
+		"env KMOD='$remote_dir/idpf/src/if_idpf.ko' IDPF_IFACE='$interface' IDPF_ALLOW_HARDWARE=1 IDPF_CONSOLE_CONFIRMED=1 TESTPEER='$peer' TESTIP='${TESTIP:-192.168.211.1/24}' PEER_IFACE='${PEER_IFACE:-ice0}' PEER_MODULE='${PEER_MODULE:-if_ice}' PYTHON='${PYTHON:-python3}' sh '$remote_dir/scripts/hardware-suite.sh'"
 }
 
 if (( on_freebsd )); then

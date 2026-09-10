@@ -33,6 +33,7 @@ SRCS	+= idpf_ptp.c
 .if defined(ENABLE_SIOV_SUPPORT)
 SRCS	+= idpf_adi.c
 CFLAGS	+= -DENABLE_SIOV_SUPPORT
+CFLAGS	+= -DNON_FLEX_ARRAY_ADI_SUPPORT -DAI_MBX
 .endif
 
 #
